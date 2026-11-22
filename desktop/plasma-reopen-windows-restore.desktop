@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Restore saved session
+Comment=Reopens the apps saved by Save & Shut Down / Save & Restart
+Exec=@BIN@ restore
+Icon=system-reboot
+NoDisplay=true
+X-KDE-autostart-phase=2

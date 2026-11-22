@@ -1,0 +1,29 @@
+#!/bin/bash
+# Installs plasma-reopen-windows for the current user (no root needed).
+# Run from this folder:  bash install.sh
+set -eu
+cd "$(dirname "$0")"
+[ "$(id -u)" != 0 ] || { echo "Run as your normal user, not with sudo."; exit 1; }
+
+BIN=$HOME/.local/bin/plasma-reopen-windows
+APPS=$HOME/.local/share/applications
+AUTO=$HOME/.config/autostart
+
+missing=""
+for c in python3 kstart kdialog notify-send; do command -v $c >/dev/null || missing="$missing $c"; done
+python3 -c 'import gi; gi.require_version("Gio", "2.0")' 2>/dev/null || missing="$missing python3-gobject"
+[ -z "$missing" ] || { echo "Missing:$missing  (Fedora: sudo dnf install python3-gobject kdialog libnotify)"; exit 1; }
+
+install -D -m 755 src/plasma-reopen-windows "$BIN"
+for f in shutdown reboot; do
+    install -D -m 644 desktop/plasma-reopen-windows-$f.desktop "$APPS/plasma-reopen-windows-$f.desktop"
+    sed -i "s|@BIN@|$BIN|" "$APPS/plasma-reopen-windows-$f.desktop"
+done
+install -D -m 644 desktop/plasma-reopen-windows-restore.desktop "$AUTO/plasma-reopen-windows-restore.desktop"
+sed -i "s|@BIN@|$BIN|" "$AUTO/plasma-reopen-windows-restore.desktop"
+[ -e "$HOME/.config/plasma-reopen-windows.conf" ] || install -m 644 src/plasma-reopen-windows.conf "$HOME/.config/plasma-reopen-windows.conf"
+update-desktop-database "$APPS" 2>/dev/null || true
+kbuildsycoca6 2>/dev/null || true
+
+echo "Installed. In the app menu: \"Save & Shut Down\" and \"Save & Restart\"."
+echo "Try it without powering off:  $BIN save   (then: $BIN restore)"

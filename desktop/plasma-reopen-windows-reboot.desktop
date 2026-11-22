@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Save & Restart
+Comment=Close all apps so they save every window, restart, and reopen them at the next login
+Exec=@BIN@ reboot
+Icon=system-reboot
+Categories=System;
+Keywords=restart;reboot;session;save;restore;

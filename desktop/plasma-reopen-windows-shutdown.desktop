@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Save & Shut Down
+Comment=Close all apps so they save every window, shut down, and reopen them at the next login
+Exec=@BIN@ shutdown
+Icon=system-shutdown
+Categories=System;
+Keywords=shutdown;power off;session;save;restore;
