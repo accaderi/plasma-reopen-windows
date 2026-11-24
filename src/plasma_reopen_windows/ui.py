@@ -138,6 +138,16 @@ def button(label, slot, tip):
     return b
 
 
+def comparable(p):
+    """A profile for "is it changed?": a front tab of 0 and none recorded
+    (older profiles) are the same."""
+    p = copy.deepcopy(p)
+    for w in (p or {}).get("windows", []):
+        if not w.get("active"):
+            w.pop("active", None)
+    return p
+
+
 def tint(widget, background=None, text=None):
     """Colour a button through its palette, not a style sheet: Breeze keeps its
     own size and shape in every state, and a disabled button looks like any
@@ -611,7 +621,7 @@ class Profiles(Page):
         """Save changes (blue) and Discard changes are active only while the
         profile differs from the saved one: an edit taken back is no change,
         like on the Settings page."""
-        on = bool(self.current) and self.edited_profile() != self.saved_copy
+        on = bool(self.current) and comparable(self.edited_profile()) != comparable(self.saved_copy)
         self.save_btn.setEnabled(on)
         self.discard_btn.setEnabled(on)
         highlight(self.save_btn, on)
@@ -774,6 +784,8 @@ class Profiles(Page):
         saved = saved[index]["urls"] if index < len(saved) and saved[index].get("caption") == w["caption"] \
             else shown
         lines = lambda: [l.strip() for l in edit.toPlainText().splitlines() if l.strip()]
+        saved_active = next((x.get("active", 0) for x in (self.saved_copy or {}).get("windows", [])[index:index + 1]
+                             if x.get("caption") == w["caption"]), w.get("active", 0))
         done.setEnabled(shown != saved)
         edit.textChanged.connect(lambda: done.setEnabled(lines() != shown or lines() != saved))
         bb.accepted.connect(d.accept)
@@ -787,8 +799,11 @@ class Profiles(Page):
             k = w.get("active") or 0
             front = w["urls"][k] if 0 <= k < len(w["urls"]) else None
             w["urls"] = [l.strip() for l in edit.toPlainText().splitlines() if l.strip()]
-            # the page in front stays in front, wherever it moved to (else the first)
+            # the page in front stays in front, wherever it moved to (else the first);
+            # pages back as saved: the saved front tab with them
             w["active"] = w["urls"].index(front) if front in w["urls"] else 0
+            if w["urls"] == saved:
+                w["active"] = saved_active
             self.browsers.item(row, 1).setText(str(len(w["urls"])))
             self.update_dirty()
 
