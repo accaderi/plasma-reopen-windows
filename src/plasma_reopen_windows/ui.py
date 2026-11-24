@@ -5,6 +5,7 @@ windows runs as the command-line tool in its own process. The app reads and
 edits the settings file and the profile files, and handles "Where to show it".
 """
 
+import copy
 import json
 import os
 import platform
@@ -472,7 +473,8 @@ class Profiles(Page):
         tint(delete, QColor("#da4453"), QColor("white"))
         line.addWidget(delete)
         v.addLayout(line)
-        self.dirty(False)
+        self.saved_copy, self.removed, self.screen_unsaved = None, set(), False
+        self.update_dirty()
 
     @staticmethod
     def table(headers, stretch, header=None):
@@ -575,7 +577,7 @@ class Profiles(Page):
                 self.browsers.removeRow(r)
         self.removed.add(app)
         self.ticked()
-        self.dirty()
+        self.update_dirty()
 
     def ticked(self):
         """Redraw without the switched-off apps; keep the "All" box in step."""
@@ -584,15 +586,35 @@ class Profiles(Page):
         self.all.set_state(Qt.Checked if on and all(on) else Qt.Unchecked if not any(on) else Qt.PartiallyChecked)
         self.preview.show_layout(self.current, self.hidden_apps())
 
-    def dirty(self, on=True):
-        """Save changes is active, and blue, only while there are unsaved edits."""
+    def reset_edits(self):
+        """Nothing edited: the profile as shown is the one saved."""
+        self.screen_unsaved = False      # the screens show the unsaved version (after an undo)
+        self.removed = set()             # apps taken out with the trash can, not saved yet
+        self.update_dirty()
+
+    def edited_profile(self):
+        """The profile as it would be saved: what is shown, with the ticks,
+        start delays and removed apps of the tables (pages are edited in place)."""
+        p = copy.deepcopy(self.current)
+        rows = {app: (box, spin) for app, box, spin in self.app_rows()}
+        p["apps"] = [a for a in p["apps"] if a["app"] not in self.removed]
+        p["windows"] = [w for w in p["windows"] if w["app"] not in self.removed]
+        p["media"] = [m for m in p.get("media", []) if m.get("app") not in self.removed]
+        for a in p["apps"]:
+            if a["app"] in rows:
+                box, spin = rows[a["app"]]
+                a["enabled"] = box.isChecked()
+                a["start_delay"] = spin.value()
+        return p
+
+    def update_dirty(self):
+        """Save changes (blue) and Discard changes are active only while the
+        profile differs from the saved one: an edit taken back is no change,
+        like on the Settings page."""
+        on = bool(self.current) and self.edited_profile() != self.saved_copy
         self.save_btn.setEnabled(on)
         self.discard_btn.setEnabled(on)
         highlight(self.save_btn, on)
-        if not on:
-            self.screen_unsaved = False   # the screens show the unsaved version (after an undo)
-            self.edited = set()      # windows whose pages were edited and not saved yet
-            self.removed = set()     # apps taken out with the trash can, not saved yet
 
     def tick_all(self):
         rows = self.app_rows()
@@ -602,13 +624,14 @@ class Profiles(Page):
             box.setChecked(on)
             box.blockSignals(False)
         self.ticked()
-        self.dirty()
+        self.update_dirty()
 
     def select(self, profile=None):
         """Show the chosen profile as saved, or the given one (then as unsaved edits)."""
         self.shown = self.picker.currentIndex()
         name = self.picker.currentData()
-        self.current = profile if profile else profiles.find(name) if name else None
+        self.saved_copy = profiles.find(name) if name else None     # as on disk, to compare with
+        self.current = profile if profile else copy.deepcopy(self.saved_copy)
         p = self.current
         self.removed = set()
         for t in (self.apps, self.browsers):
@@ -623,7 +646,7 @@ class Profiles(Page):
             self.apps.insertRow(r)
             box = QCheckBox()
             box.setChecked(a.get("enabled", True))
-            box.toggled.connect(lambda _on: (self.ticked(), self.dirty()))
+            box.toggled.connect(lambda _on: (self.ticked(), self.update_dirty()))
             cell = centered(box)
             self.apps.setCellWidget(r, 0, cell)
             self.hover[self.apps].watch(cell)
@@ -639,7 +662,7 @@ class Profiles(Page):
             spin.setPalette(clear)
             spin.setRange(0, 300)
             spin.setValue(int(a.get("start_delay", 0)))
-            spin.valueChanged.connect(lambda _v: self.dirty())
+            spin.valueChanged.connect(lambda _v: self.update_dirty())
             self.apps.setCellWidget(r, 2, spin)
             self.hover[self.apps].watch(spin)
             trash = QToolButton()
@@ -664,7 +687,7 @@ class Profiles(Page):
             pages.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.browsers.setItem(r, 1, pages)
         self.ticked()
-        self.dirty(False)
+        self.reset_edits()
 
     def unsaved_ok(self):
         """With unsaved edits: save them, drop them, or stop (returns False)."""
@@ -709,14 +732,7 @@ class Profiles(Page):
         p = self.need()
         if not p:
             return
-        rows = {app: (box, spin) for app, box, spin in self.app_rows()}   # rows are sorted by name
-        p["apps"] = [a for a in p["apps"] if a["app"] not in self.removed]
-        p["windows"] = [w for w in p["windows"] if w["app"] not in self.removed]
-        p["media"] = [m for m in p.get("media", []) if m.get("app") not in self.removed]
-        for a in p["apps"]:
-            box, spin = rows[a["app"]]
-            a["enabled"] = box.isChecked()
-            a["start_delay"] = spin.value()
+        p = self.edited_profile()
         # the command saves it and reloads it onto the screens, as one step for Undo last
         extra = self.choices_for(p, "reload", plan_from=True)
         if extra is None:
@@ -724,8 +740,8 @@ class Profiles(Page):
         path = os.path.join(config.STATE_DIR, "edited-profile.json")
         with open(path, "w") as f:
             json.dump(p, f)
-        self.dirty(False)
         self.save_btn.setEnabled(False)
+        self.discard_btn.setEnabled(False)
         self.app.run_cli(["profile", "save-edit", p["name"], "--from", path] + extra, done=self.refresh,
                          detached=detached)
 
@@ -751,8 +767,15 @@ class Profiles(Page):
         done = bb.button(QDialogButtonBox.Ok)
         done.setText("Done")
         done.setToolTip("Take the pages over; \"Save changes\" then saves them with the profile.")
-        done.setEnabled(index in self.edited)        # edited before and not saved yet
-        edit.textChanged.connect(lambda: done.setEnabled(True))       # editing started = changed
+        # Done when there is something to take over: the text differs from what this
+        # window has now, or from what is saved for it (edited before, not saved yet)
+        shown = list(w["urls"])
+        saved = (self.saved_copy or {}).get("windows", [])
+        saved = saved[index]["urls"] if index < len(saved) and saved[index].get("caption") == w["caption"] \
+            else shown
+        lines = lambda: [l.strip() for l in edit.toPlainText().splitlines() if l.strip()]
+        done.setEnabled(shown != saved)
+        edit.textChanged.connect(lambda: done.setEnabled(lines() != shown or lines() != saved))
         bb.accepted.connect(d.accept)
         bb.rejected.connect(d.reject)
         v.addWidget(bb)
@@ -767,8 +790,7 @@ class Profiles(Page):
             # the page in front stays in front, wherever it moved to (else the first)
             w["active"] = w["urls"].index(front) if front in w["urls"] else 0
             self.browsers.item(row, 1).setText(str(len(w["urls"])))
-            self.dirty()
-            self.edited.add(index)
+            self.update_dirty()
 
     def choices_for(self, p, mode, plan_from=False):
         """Ask about saved windows that are not clearly found; returns extra
@@ -850,8 +872,7 @@ class Profiles(Page):
         self.picker.blockSignals(True)
         self.picker.setCurrentIndex(i)
         self.picker.blockSignals(False)
-        self.select(profiles.migrate(before))
-        self.dirty()
+        self.select(profiles.migrate(before))     # differs from the file: Save changes is on
         self.screen_unsaved = True     # the undo reloaded this version onto the screens
 
     def new(self):
