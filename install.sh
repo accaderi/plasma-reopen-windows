@@ -33,18 +33,27 @@ if python3 -c 'import PySide6.QtWidgets' 2>/dev/null; then
 else
     UI=no
 fi
-for f in shutdown reboot; do
+for f in shutdown reboot save-now restore-autosave; do
     install -D -m 644 desktop/plasma-reopen-windows-$f.desktop "$APPS/plasma-reopen-windows-$f.desktop"
     sed -i "s|@BIN@|$BIN|" "$APPS/plasma-reopen-windows-$f.desktop"
 done
 install -D -m 644 desktop/plasma-reopen-windows-restore.desktop "$AUTO/plasma-reopen-windows-restore.desktop"
 sed -i "s|@BIN@|$BIN|" "$AUTO/plasma-reopen-windows-restore.desktop"
+# autosave: a user timer looks every 5 minutes whether one is due (setting autosave)
+UNITS=$HOME/.config/systemd/user
+for u in service timer; do
+    install -D -m 644 systemd/plasma-reopen-windows-autosave.$u "$UNITS/plasma-reopen-windows-autosave.$u"
+done
+sed -i "s|@BIN@|$BIN|" "$UNITS/plasma-reopen-windows-autosave.service"
+systemctl --user daemon-reload 2>/dev/null || true
+systemctl --user enable --now plasma-reopen-windows-autosave.timer >/dev/null 2>&1 || \
+    echo "Note: could not start the autosave timer (systemctl --user); autosave will not run."
 # settings file: current explanations, your values kept (old file: .old)
 "$BIN" config upgrade
 update-desktop-database "$APPS" 2>/dev/null || true
 kbuildsycoca6 2>/dev/null || true
 
-echo "Installed. In the app menu: \"Save & Shut Down\" and \"Save & Restart\"."
+echo "Installed. In the app menu: \"Save & Shut Down\", \"Save & Restart\", \"Save Windows Now\", \"Restore Last Autosave\"."
 if [ "$UI" = yes ]; then
     echo "Settings app: \"Reopen Windows\" in the app menu."
 else

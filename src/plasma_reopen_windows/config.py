@@ -87,6 +87,19 @@ SETTINGS = [
          help="With on_login = ask: without an answer, the last session is restored "
               "(or nothing, if there is none)."),
     # Profiles
+    # Autosave
+    dict(key="autosave", default="yes", type="bool", section="Autosave",
+         label="Save the open windows every while",
+         help="A snapshot of the open apps and windows (nothing is closed or moved), for a "
+              "hang, an empty battery, a crash, or the normal Shut Down. The last two are "
+              "kept; switching this off keeps them, and \"Save now\" still works."),
+    dict(key="autosave_minutes", default="30", type="int", min=5, max=240, section="Autosave",
+         label="Minutes between autosaves",
+         help="Written only when something changed since the last one."),
+    dict(key="autosave_ask", default="yes", type="bool", section="Autosave",
+         label="Offer the autosave at login",
+         help="After a session that ended without Save & Shut Down (with on_login = last "
+              "or ask): one question to bring the windows of the last autosave back."),
     dict(key="profile_load", default="unite", type="choice", choices=["unite", "reload"],
          section="Profiles", label="What a profile's menu entry does",
          help="For the menu entries \"Load profile: NAME\" and for profile:NAME at login. "

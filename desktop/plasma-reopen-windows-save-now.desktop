@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Save Windows Now
+Comment=Save the open apps and windows now as the newest autosave (nothing is closed)
+Exec=@BIN@ autosave now
+Icon=document-save
+Categories=System;
+Keywords=save;autosave;windows;session;snapshot;

@@ -1,0 +1,6 @@
+[Unit]
+Description=Reopen Windows: autosave of the open windows (when due)
+
+[Service]
+Type=oneshot
+ExecStart=@BIN@ autosave

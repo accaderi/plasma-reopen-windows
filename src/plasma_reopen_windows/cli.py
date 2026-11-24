@@ -16,6 +16,8 @@ they were. This tool does it the other way round:
   profile   named arrangements of apps and windows: profile list / save / load /
             unite / reload / arrange / show / edit / rename / delete / export /
             import (see: plasma-reopen-windows profile help)
+  autosave  the open windows every while (the timer runs this); autosave now,
+            autosave list, autosave restore [1|2|ask], autosave delete
   status    show what is saved, change nothing
   windows   list the open windows as this tool sees them
   config    show the settings; config set NAME VALUE, config reset NAME,
@@ -86,6 +88,53 @@ PROFILE_USAGE = """usage: plasma-reopen-windows profile COMMAND
   clean                    delete automatic profiles made by older versions
   export NAME [FILE]       copy to a file (default: current folder)
   import FILE [--overwrite]"""
+
+
+def do_autosave(args):
+    from . import autosave
+    sub = args[0] if args else "timer"
+    if sub == "timer":                   # the systemd timer: quiet, only when due
+        try:
+            autosave.take()
+        except Exception as e:           # the desktop may not be ready yet at login
+            log("autosave skipped: %s" % e)
+    elif sub == "now":
+        p = autosave.take(manual=True) or autosave.read(0)
+        if p:
+            notify("Windows saved", autosave.describe(p))
+    elif sub == "list":
+        saved = [{"slot": i + 1, "saved": p.get("saved"), "text": autosave.describe(p)}
+                 for i, p in autosave.all_saved()]
+        print(json.dumps(saved) if "--json" in args else "\n".join("%d  %s" % (s["slot"], s["text"])
+                                                                   for s in saved) or "no autosave")
+    elif sub == "restore":
+        which = args[1] if len(args) > 1 else "1"
+        if which == "ask":               # menu entry / shortcut: choose when there are two
+            which = ask_slot()
+            if which is None:
+                return
+        if autosave.restore(int(which) - 1) is False:
+            sys.exit("cancelled")
+    elif sub == "delete":
+        autosave.delete()
+    else:
+        sys.exit("usage: plasma-reopen-windows autosave [now | list | restore [1|2|ask] | delete]")
+
+
+def ask_slot():
+    """Which autosave to restore: the only one, or chosen in a small menu."""
+    from . import autosave
+    saved = autosave.all_saved()
+    if not saved:
+        notify("Restore last autosave", "There is no autosave yet.")
+        return None
+    if len(saved) == 1:
+        return "1"
+    menu = ["kdialog", "--title", "Reopen windows", "--menu", "Restore the windows of which autosave?"]
+    for i, p in saved:
+        menu += [str(i + 1), ("Newest: " if i == 0 else "Earlier: ") + autosave.describe(p)]
+    r = subprocess.run(menu, capture_output=True, text=True, check=False)
+    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
 
 
 def front(show=False, above=None):
@@ -214,7 +263,15 @@ def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     # Started from the settings app for something that opens windows: keep the
     # app above them meanwhile, and in front at the end (also after an error).
-    acting = bool(os.environ.get("PRW_FROM_APP")) and cmd in ("profile", "restore", "save")
+    acting = bool(os.environ.get("PRW_FROM_APP")) and cmd in ("profile", "restore", "save", "autosave")
+    # commands that make windows appear or close: no autosave meanwhile
+    loading = cmd in ("shutdown", "reboot", "save", "restore", "login") or (
+        cmd == "profile" and len(sys.argv) > 2 and sys.argv[2] in (
+            "load", "unite", "reload", "switch", "arrange", "undo", "save-edit")) or (
+        cmd == "autosave" and len(sys.argv) > 2 and sys.argv[2] == "restore")
+    if loading:
+        from .autosave import mark_busy
+        mark_busy()
     if acting:
         try:
             front(above=True)
@@ -249,6 +306,8 @@ def main():
                         w["app"][:28], w["output"], w["x"], w["y"], w["width"], w["height"], w["caption"][:50]))
             else:
                 print("nothing saved")
+        elif cmd == "autosave":
+            do_autosave(sys.argv[2:])
         elif cmd == "front":                 # used by the settings app: show its window
             front(show=True)
         elif cmd == "config":
@@ -272,6 +331,9 @@ def main():
         notify("Reopen windows: error", str(e), critical=True)
         raise
     finally:
+        if loading:
+            from .autosave import clear_busy
+            clear_busy()
         if acting:
             try:
                 front(above=False)

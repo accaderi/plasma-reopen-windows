@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Restore Last Autosave
+Comment=Bring back the apps and windows of the last autosave (nothing is closed)
+Exec=@BIN@ autosave restore ask
+Icon=document-revert
+Categories=System;
+Keywords=restore;autosave;windows;session;

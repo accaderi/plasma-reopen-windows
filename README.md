@@ -20,13 +20,14 @@ Adds two entries to the app menu: **Save & Shut Down** and **Save & Restart**.
 6. [Use](#use)
 7. [The settings app](#the-settings-app)
 8. [Profiles](#profiles)
-9. [At login](#at-login)
-10. [Settings](#settings)
-11. [How it works](#how-it-works)
-12. [Troubleshooting](#troubleshooting)
-13. [Uninstall](#uninstall)
-14. [Development](#development)
-15. [License](#license)
+9. [Autosave](#autosave)
+10. [At login](#at-login)
+11. [Settings](#settings)
+12. [How it works](#how-it-works)
+13. [Troubleshooting](#troubleshooting)
+14. [Uninstall](#uninstall)
+15. [Development](#development)
+16. [License](#license)
 
 ---
 
@@ -280,14 +281,49 @@ plasma-reopen-windows profile list
   example Chrome after a hard power-off), the missing ones are opened from
   what was saved for them.
 
+## Autosave
+
+Save & Shut Down only helps when it is used. Every 30 minutes (setting
+`autosave_minutes`), a snapshot of the open apps and windows is taken, the
+same as a profile: screens, places, order, browser pages with the tab in
+front, Konsole and Dolphin folders, open files. Nothing is closed or moved,
+and it is written only when something changed. It brings the windows back
+after a hang or a long press, an empty battery, a crash, or the normal Shut
+Down (which closes a browser window by window, so only its last window
+would come back).
+
+- **Save Windows Now** (app menu, the settings app, or a shortcut you give it
+  in "Where to show it") takes one at once, also with autosave switched off.
+- **Restore Last Autosave** brings the windows back like a profile's Unite:
+  missing apps and windows start, nothing is closed, Undo works.
+- The **last two** are kept: a snapshot taken while a normal shutdown was
+  closing the apps is half empty, and the one before it is the good one.
+  Switching autosave off keeps them.
+- No snapshot is taken while a load or restore is running.
+- At login, after a session that did not end with Save & Shut Down, one
+  question offers them (setting `autosave_ask`; once per snapshot).
+- Not in an autosave: unsaved work, terminal output, video positions; those
+  need hibernation or Save & Shut Down.
+
+```bash
+plasma-reopen-windows autosave now            # save now
+plasma-reopen-windows autosave list           # 1 = newest, 2 = earlier
+plasma-reopen-windows autosave restore 2      # bring back the earlier one
+plasma-reopen-windows autosave delete
+```
+
+A user timer looks every 5 minutes whether one is due
+(`systemctl --user status plasma-reopen-windows-autosave.timer`).
+
 ## At login
 
 What comes back is the setting `on_login`:
 
-- `last` (default): the session saved by Save & Shut Down / Restart.
-- `ask`: a notification with buttons: restore the last session, load a profile,
-  or nothing. Without an answer, the last session comes back after
-  `ask_timeout` seconds.
+- `last` (default): the session saved by Save & Shut Down / Restart; if
+  there is none (the session ended otherwise), the last autosave is offered.
+- `ask`: a notification with buttons: restore the last session, the last
+  autosave, load a profile, or nothing. Without an answer, the last session
+  comes back after `ask_timeout` seconds.
 - `profile:NAME`: always that profile (for example `profile:Work`).
 - `nothing`: start empty. A saved session is kept aside, not deleted.
 
@@ -312,6 +348,9 @@ plasma-reopen-windows config set on_login ask
 | `max_age_days` | 7 | Oldest session to restore (days). A saved session older than this is ignored at login. |
 | `on_login` | last | What comes back at login. last = the session saved by Save & Shut Down / Restart (if there is one); ask = a notification with the choices (last session, a profile, nothing); profile:NAME = always load that profile; nothing = start empty. |
 | `ask_timeout` | 20 | Seconds to answer the login question. With on_login = ask: without an answer, the last session is restored (or nothing, if there is none). |
+| `autosave` | yes | Save the open windows every while. A snapshot of the open apps and windows (nothing is closed or moved), for a hang, an empty battery, a crash, or the normal Shut Down. The last two are kept; switching this off keeps them, and "Save now" still works. |
+| `autosave_minutes` | 30 | Minutes between autosaves. Written only when something changed since the last one. |
+| `autosave_ask` | yes | Offer the autosave at login. After a session that ended without Save & Shut Down (with on_login = last or ask): one question to bring the windows of the last autosave back. |
 | `profile_load` | unite | What a profile's menu entry does. For the menu entries "Load profile: NAME" and for profile:NAME at login. unite = start the profile's apps and windows that are missing and arrange all of them, closing nothing; reload = also close the apps that are not in the profile. Either can be undone once (Undo last). |
 | `when_unsure` | ask | A saved window is not clearly found. When a saved window's title matches none of the open windows, but its app has other windows open (for example a browser window with another tab in front): ask = show a window to choose, per saved window; open = open the saved one again; use = move an open window of that app to its place; skip = leave it out. |
 

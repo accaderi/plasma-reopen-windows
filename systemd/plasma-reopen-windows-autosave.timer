@@ -1,0 +1,9 @@
+[Unit]
+Description=Reopen Windows: look every 5 minutes whether an autosave is due
+
+[Timer]
+OnStartupSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

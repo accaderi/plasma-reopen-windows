@@ -15,6 +15,8 @@ APPS_DIR = os.path.join(os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.l
 ENTRIES = [
     ("plasma-reopen-windows-shutdown", "Save & Shut Down"),
     ("plasma-reopen-windows-reboot", "Save & Restart"),
+    ("plasma-reopen-windows-save-now", "Save Windows Now"),
+    ("plasma-reopen-windows-restore-autosave", "Restore Last Autosave"),
     ("plasma-reopen-windows-settings", "Reopen Windows (settings)"),
 ]
 FAV_AGENT = "org.kde.plasma.favorites.applications"

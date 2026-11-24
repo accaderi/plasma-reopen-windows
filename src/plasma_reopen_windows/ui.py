@@ -384,7 +384,46 @@ class Overview(Page):
         v.addLayout(row)
         v.addWidget(hint("\"Save without restarting\" closes the apps and saves them; \"Restore now\" opens a "
                          "saved session again. Useful to try it out."))
+        box = QGroupBox("Autosave")
+        bl = QVBoxLayout(box)
+        self.auto_info = QLabel()
+        self.auto_info.setWordWrap(True)
+        bl.addWidget(self.auto_info)
+        row = QHBoxLayout()
+        for label, slot, tip in (
+                ("Save now", lambda: self.app.run_cli(["autosave", "now"], done=self.refresh),
+                 "Save the open apps and windows now as the newest autosave. Nothing is closed."),
+                ("Restore…", self.restore_autosave,
+                 "Bring back the apps and windows of an autosave, like a profile's Unite: missing ones "
+                 "start, nothing is closed. Undo works."),
+                ("Delete autosaves", self.delete_autosaves, "Delete both autosaves.")):
+            b = button(label, slot, tip)
+            row.addWidget(b)
+            setattr(self, "auto_" + label.split()[0].strip("…").lower(), b)
+        bl.addLayout(row)
+        bl.addWidget(hint("Every %s minutes when switched on (Settings, Autosave), and with \"Save now\"; "
+                          "the last two are kept. For a hang, an empty battery, a crash or the normal Shut Down."
+                          % config.load_conf()["autosave_minutes"]))
+        v.addWidget(box)
         v.addStretch()
+
+    def restore_autosave(self):
+        from . import autosave
+        saved = autosave.all_saved()
+        if not saved:
+            return
+        slot = 1
+        if len(saved) > 1:
+            items = [("Newest: " if i == 0 else "Earlier: ") + autosave.describe(p) for i, p in saved]
+            item, ok = QInputDialog.getItem(self, "Restore autosave", "Bring back the windows of:", items, 0, False)
+            if not ok:
+                return
+            slot = items.index(item) + 1
+        self.app.run_cli(["autosave", "restore", str(slot)], done=self.refresh)
+
+    def delete_autosaves(self):
+        if QMessageBox.question(self, "Delete autosaves", "Delete both autosaves?") == QMessageBox.Yes:
+            self.app.run_cli(["autosave", "delete"], done=self.refresh)
 
     def run(self, args, ask):
         if ask and QMessageBox.question(self, "Save without restarting",
@@ -393,6 +432,14 @@ class Overview(Page):
         self.app.run_cli(args, detached=args[0] in ("shutdown", "reboot"))
 
     def refresh(self):
+        from . import autosave
+        saved = autosave.all_saved()
+        on = config.load_conf()["autosave"] == "yes"
+        lines = [("<b>Newest</b>: " if i == 0 else "Earlier: ") + autosave.describe(p) for i, p in saved]
+        self.auto_info.setText(("<br>".join(lines) or "No autosave yet.") +
+                               ("" if on else "<br><i>Autosave is switched off; \"Save now\" still works.</i>"))
+        self.auto_restore.setEnabled(bool(saved))
+        self.auto_delete.setEnabled(bool(saved))
         data, what = read_session()
         if not data:
             self.info.setText("Nothing saved yet.")
