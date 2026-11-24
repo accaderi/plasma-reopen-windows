@@ -949,13 +949,26 @@ class Settings(Page):
             text = st["help"] + (" Example: %s" % st["example"] if st.get("example") else "")
             form.addRow("", hint(text))
         self.form.addStretch()
+        # like KDE's System Settings: Defaults on the left, Reset and Apply on the right,
+        # each active only when it would change something
+        self.saved = {}
         row = QHBoxLayout()
-        row.addWidget(hint("Saved to %s; the comments in the file are kept." % config.CONF))
-        for label, slot in (("Revert", self.refresh), ("Apply", self.apply)):
-            b = QPushButton(label)
-            b.clicked.connect(slot)
-            row.addWidget(b)
+        self.defaults_btn = button("Defaults", lambda: self.fill(config.DEFAULTS),
+                                   "Put every setting to its default value (still to be applied).")
+        row.addWidget(self.defaults_btn)
+        row.addWidget(hint("Saved to %s; the comments in the file are kept." % config.CONF), 1)
+        self.reset_btn = button("Reset", self.refresh, "Take back the changes that are not applied yet.")
+        self.apply_btn = button("Apply", self.apply, "Save the changed settings.")
+        row.addWidget(self.reset_btn)
+        row.addWidget(self.apply_btn)
         outer.addLayout(row)
+        for st in config.SETTINGS:
+            w = self.widgets[st["key"]]
+            for sig in ("toggled", "valueChanged", "currentTextChanged", "textChanged"):
+                if hasattr(w, sig):
+                    getattr(w, sig).connect(lambda *_: self.update_buttons())
+                    break
+        self.update_buttons()
 
     def pick_apps(self):
         """Choose apps to leave alone from the apps open now (ids shown with names)."""
@@ -1017,8 +1030,31 @@ class Settings(Page):
             return w.currentText()
         return w.text()
 
+    def current(self):
+        return {st["key"]: self.value(st, self.widgets[st["key"]]) for st in config.SETTINGS}
+
+    def dirty(self):
+        return bool(self.saved) and self.current() != self.saved
+
+    def update_buttons(self):
+        """Apply and Reset only with changes not applied yet (a value changed and
+        changed back is no change); Defaults only when something is not default."""
+        if not hasattr(self, "apply_btn"):
+            return
+        changed = self.dirty()
+        self.apply_btn.setEnabled(changed)
+        self.reset_btn.setEnabled(changed)
+        self.defaults_btn.setEnabled(self.current() != dict(config.DEFAULTS))
+        self.apply_btn.setStyleSheet(
+            "QPushButton { background: palette(highlight); color: palette(highlighted-text);"
+            " border: 1px solid palette(highlight); border-radius: 3px; padding: 5px 12px; }" if changed else "")
+
     def refresh(self):
-        cfg = config.load_conf()
+        self.saved = config.load_conf()
+        self.fill(self.saved)
+
+    def fill(self, cfg):
+        """Show these values in the fields (saved ones, or the defaults)."""
         for st in config.SETTINGS:
             w, v = self.widgets[st["key"]], cfg[st["key"]]
             if st["type"] == "bool":
@@ -1034,8 +1070,10 @@ class Settings(Page):
                 w.setCurrentText(v)
             else:
                 w.setText(v)
+        self.update_buttons()
 
     def apply(self):
+        """Save the changed settings; False if one was refused."""
         cfg = config.load_conf()
         changed = []
         for st in config.SETTINGS:
@@ -1046,9 +1084,24 @@ class Settings(Page):
                     changed.append(st["key"])
                 except ValueError as e:
                     QMessageBox.warning(self, "Settings", str(e))
-                    return
+                    return False
         self.app.status("Saved: %s" % (", ".join(changed) or "nothing changed"))
         self.refresh()
+        return True
+
+    def unsaved_ok(self):
+        """With changes not applied: apply, discard or stay (False)."""
+        if not self.dirty():
+            return True
+        answer = QMessageBox.question(self, "Settings not applied", "Apply the changed settings?",
+                                      QMessageBox.Apply | QMessageBox.Discard | QMessageBox.Cancel,
+                                      QMessageBox.Apply)
+        if answer == QMessageBox.Cancel:
+            return False
+        if answer == QMessageBox.Apply:
+            return self.apply()
+        self.refresh()
+        return True
 
 
 class Showing(Page):
@@ -1250,6 +1303,9 @@ class Main(QMainWindow):
 
     def closeEvent(self, event):
         """Unsaved profile edits: save, discard or stay; then remember where we were."""
+        if not self.pages[2].unsaved_ok():
+            event.ignore()
+            return
         prof = self.pages[1]
         if prof.save_btn.isEnabled():
             answer = QMessageBox.question(
@@ -1272,6 +1328,12 @@ class Main(QMainWindow):
         event.accept()
 
     def show_page(self, i):
+        here = self.stack.currentIndex()
+        if here != i and isinstance(self.pages[here], Settings) and not self.pages[here].unsaved_ok():
+            self.nav.blockSignals(True)
+            self.nav.setCurrentRow(here)          # stay on the settings page
+            self.nav.blockSignals(False)
+            return
         self.stack.setCurrentIndex(i)
         self.pages[i].refresh()
 
