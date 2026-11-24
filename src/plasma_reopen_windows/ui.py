@@ -137,6 +137,27 @@ def button(label, slot, tip):
     return b
 
 
+def tint(widget, background=None, text=None):
+    """Colour a button through its palette, not a style sheet: Breeze keeps its
+    own size and shape in every state, and a disabled button looks like any
+    other disabled one. No colours = back to normal."""
+    pal = QApplication.palette()
+    if background is not None:
+        for group in (QPalette.Active, QPalette.Inactive):
+            pal.setColor(group, QPalette.Button, background)
+            pal.setColor(group, QPalette.ButtonText, text)
+    widget.setPalette(pal)
+
+
+def highlight(widget, on):
+    """The blue of "there is something to save"."""
+    pal = QApplication.palette()
+    if on:
+        tint(widget, pal.color(QPalette.Active, QPalette.Highlight), pal.color(QPalette.Active, QPalette.HighlightedText))
+    else:
+        tint(widget)
+
+
 def quiet(table):
     """A table whose only clickable parts are its own controls: no selecting,
     no editing, no clickable column titles."""
@@ -448,10 +469,7 @@ class Profiles(Page):
                                          "another computer.")):
             line.addWidget(button(label, slot, tip))
         delete = button("Delete", self.delete, "Delete this profile.")
-        delete.setStyleSheet("QPushButton { background: #da4453; color: white; border: 1px solid #b83240;"
-                             " border-radius: 3px; padding: 5px 12px; }"
-                             "QPushButton:hover { background: #e05a68; }"
-                             "QPushButton:disabled { background: #eab3b9; border-color: #e0a0a7; }")
+        tint(delete, QColor("#da4453"), QColor("white"))
         line.addWidget(delete)
         v.addLayout(line)
         self.dirty(False)
@@ -570,9 +588,7 @@ class Profiles(Page):
         """Save changes is active, and blue, only while there are unsaved edits."""
         self.save_btn.setEnabled(on)
         self.discard_btn.setEnabled(on)
-        self.save_btn.setStyleSheet(
-            "QPushButton { background: palette(highlight); color: palette(highlighted-text);"
-            " border: 1px solid palette(highlight); border-radius: 3px; padding: 5px 12px; }" if on else "")
+        highlight(self.save_btn, on)
         if not on:
             self.screen_unsaved = False   # the screens show the unsaved version (after an undo)
             self.edited = set()      # windows whose pages were edited and not saved yet
@@ -1045,9 +1061,7 @@ class Settings(Page):
         self.apply_btn.setEnabled(changed)
         self.reset_btn.setEnabled(changed)
         self.defaults_btn.setEnabled(self.current() != dict(config.DEFAULTS))
-        self.apply_btn.setStyleSheet(
-            "QPushButton { background: palette(highlight); color: palette(highlighted-text);"
-            " border: 1px solid palette(highlight); border-radius: 3px; padding: 5px 12px; }" if changed else "")
+        highlight(self.apply_btn, changed)
 
     def refresh(self):
         self.saved = config.load_conf()
