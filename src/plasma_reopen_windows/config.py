@@ -101,11 +101,13 @@ SETTINGS = [
          help="After a session that ended without Save & Shut Down (with on_login = last "
               "or ask): one question to bring the windows of the last autosave back."),
     dict(key="profile_load", default="unite", type="choice", choices=["unite", "reload"],
-         section="Profiles", label="What a profile's menu entry does",
-         help="For the menu entries \"Load profile: NAME\" and for profile:NAME at login. "
-              "unite = start the profile's apps and windows that are missing and arrange "
-              "all of them, closing nothing; reload = also close the apps that are not in "
-              "the profile. Either can be undone once (Undo last)."),
+         section="Profiles", label="What loading a profile does outside the app",
+         help="For the menu entries \"Load profile: NAME\" (app menu, or a shortcut, favorite "
+              "or panel button from \"Where to show it\") and for profile:NAME at login. "
+              "unite = like \"Unite Screen and Existing\": start the profile's apps and windows "
+              "that are missing and arrange all of them, closing nothing; reload = like "
+              "\"Reload Existing\": also close the apps that are not in the profile. Undo works "
+              "for both."),
     dict(key="when_unsure", default="ask", type="choice", choices=["ask", "open", "use", "skip"],
          section="Profiles", label="A saved window is not clearly found",
          help="When a saved window's title matches none of the open windows, but its app "

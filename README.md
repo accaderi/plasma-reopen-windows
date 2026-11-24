@@ -296,6 +296,10 @@ would come back).
   in "Where to show it") takes one at once, also with autosave switched off.
 - **Restore Last Autosave** brings the windows back like a profile's Unite:
   missing apps and windows start, nothing is closed, Undo works.
+- In the settings app, both autosaves are also at the end of the profile
+  list: the drawing and tables show what they would bring back, Unite,
+  Reload and Arrange work on them, and **Keep as profile…** turns one into
+  a normal profile with a name (autosaves are replaced as new ones come).
 - The **last two** are kept: a snapshot taken while a normal shutdown was
   closing the apps is half empty, and the one before it is the good one.
   Switching autosave off keeps them.
@@ -351,7 +355,7 @@ plasma-reopen-windows config set on_login ask
 | `autosave` | yes | Save the open windows every while. A snapshot of the open apps and windows (nothing is closed or moved), for a hang, an empty battery, a crash, or the normal Shut Down. The last two are kept; switching this off keeps them, and "Save now" still works. |
 | `autosave_minutes` | 30 | Minutes between autosaves. Written only when something changed since the last one. |
 | `autosave_ask` | yes | Offer the autosave at login. After a session that ended without Save & Shut Down (with on_login = last or ask): one question to bring the windows of the last autosave back. |
-| `profile_load` | unite | What a profile's menu entry does. For the menu entries "Load profile: NAME" and for profile:NAME at login. unite = start the profile's apps and windows that are missing and arrange all of them, closing nothing; reload = also close the apps that are not in the profile. Either can be undone once (Undo last). |
+| `profile_load` | unite | What loading a profile does outside the app. For the menu entries "Load profile: NAME" (app menu, or a shortcut, favorite or panel button from "Where to show it") and for profile:NAME at login. unite = like "Unite Screen and Existing": start the profile's apps and windows that are missing and arrange all of them, closing nothing; reload = like "Reload Existing": also close the apps that are not in the profile. Undo works for both. |
 | `when_unsure` | ask | A saved window is not clearly found. When a saved window's title matches none of the open windows, but its app has other windows open (for example a browser window with another tab in front): ask = show a window to choose, per saved window; open = open the saved one again; use = move an open window of that app to its place; skip = leave it out. |
 
 Change settings in the file, or with

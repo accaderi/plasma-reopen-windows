@@ -470,7 +470,12 @@ class Profiles(Page):
         top.addWidget(button("Write over from screen", self.take_over,
                              "Replace this profile with the apps and windows open now. Ticks and start "
                              "delays are kept."))
+        self.keep_btn = button("Keep as profile…", self.keep_autosave,
+                               "Keep this autosave as a profile with a name: autosaves are replaced as new "
+                               "ones are taken.")
+        top.addWidget(self.keep_btn)
         v.addLayout(top)
+        self.readonly = False            # an autosave is shown: looked at and loaded, not edited
 
         self.preview = Preview()
         v.addWidget(self.preview, 4)
@@ -558,27 +563,83 @@ class Profiles(Page):
         return box
 
     def refresh(self):
-        keep = self.current["name"] if self.current else self.app.ui_state.get("profile")
+        from . import autosave
+        keep = self.picker.currentData() if self.current else self.app.ui_state.get("profile")
         found = sorted((p for p in profiles.all_profiles() if not p.get("auto")), key=lambda p: p["name"].lower())
-        names = [p["name"] for p in found]
+        # the profiles, then the autosaves (read-only), newest first
+        entries = [(p["name"], p["name"]) for p in found] + [
+            ("Autosave: %s (%s)" % (autosave.describe(a), "newest" if i == 0 else "earlier"), "@autosave:%d" % i)
+            for i, a in autosave.all_saved()]
         self.show_undo()
         # nothing changed (the usual case after Arrange, Reload ...): no rebuild, no flicker
-        if (not self.save_btn.isEnabled() and self.current and keep in names and
-                names == [self.picker.itemData(i) for i in range(self.picker.count())] and
-                next(p for p in found if p["name"] == keep) == self.current):
+        shown = [(self.picker.itemText(i), self.picker.itemData(i)) for i in range(self.picker.count())
+                 if self.picker.itemData(i) is not None]
+        if (not self.save_btn.isEnabled() and self.current and entries == shown and
+                keep in [d for _, d in entries] and self.stored(keep) == self.saved_copy):
             return
         self.setUpdatesEnabled(False)           # rebuild in one go, without visible steps
         try:
             self.picker.blockSignals(True)
             self.picker.clear()
-            for name in names:
-                self.picker.addItem(name, name)
-                if name == keep:
+            for label, data in entries:
+                if data.startswith("@autosave:") and data.endswith(":0") and found:
+                    self.picker.insertSeparator(self.picker.count())
+                self.picker.addItem(label, data)
+                if data == keep:
                     self.picker.setCurrentIndex(self.picker.count() - 1)
             self.picker.blockSignals(False)
             self.select()
         finally:
             self.setUpdatesEnabled(True)
+
+    @staticmethod
+    def stored(data):
+        """The profile, or autosave, as saved for a picker entry."""
+        if not data:
+            return None
+        if data.startswith("@autosave:"):
+            from . import autosave
+            snap = autosave.read(int(data.split(":")[1]))
+            return profiles.migrate(snap) if snap else None
+        return profiles.find(data)
+
+    def apply_mode(self):
+        """An autosave: everything that edits it is off; loading and keeping it are on."""
+        ro = self.readonly
+        for _, box, spin in self.app_rows():
+            box.setEnabled(not ro)
+            spin.setEnabled(not ro)
+        for r in range(self.apps.rowCount()):
+            trash = self.apps.cellWidget(r, 3)
+            if trash:
+                trash.setEnabled(not ro)
+        for b in self.findChildren(QPushButton):
+            if b.text() in ("Write over from screen", "Use at login", "Rename…", "Export…", "Delete"):
+                b.setEnabled(not ro)
+        self.keep_btn.setEnabled(ro)
+
+    def keep_autosave(self):
+        """Keep the autosave shown as a profile with a name."""
+        if not self.readonly or not self.saved_copy:
+            return
+        name, ok = QInputDialog.getText(self, "Keep as profile", "Name for the new profile:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        old = profiles.find(name)
+        if old and QMessageBox.question(self, "Keep as profile", "Profile \"%s\" already exists. Replace it?"
+                                        % old["name"]) != QMessageBox.Yes:
+            return
+        p = copy.deepcopy(self.saved_copy)
+        now = time.strftime("%Y-%m-%dT%H:%M:%S")
+        p.update(name=name, auto=False, created=now, updated=now)
+        p.pop("saved", None)
+        profiles.write_json(profiles.path_for(name), p)
+        profiles.sync_menu()
+        self.app.status("Kept as profile \"%s\"" % name)
+        self.current = None
+        self.app.ui_state["profile"] = name
+        self.refresh()
 
     def hover_row(self, table, row):
         """Highlight in the drawing the window(s) of the table row under the cursor."""
@@ -676,6 +737,8 @@ class Profiles(Page):
         highlight(self.save_btn, on)
 
     def tick_all(self):
+        if self.readonly:
+            return
         rows = self.app_rows()
         on = not all(box.isChecked() for _, box, _ in rows)
         for _, box, _ in rows:
@@ -689,7 +752,8 @@ class Profiles(Page):
         """Show the chosen profile as saved, or the given one (then as unsaved edits)."""
         self.shown = self.picker.currentIndex()
         name = self.picker.currentData()
-        self.saved_copy = profiles.find(name) if name else None     # as on disk, to compare with
+        self.readonly = bool(name) and name.startswith("@autosave:")
+        self.saved_copy = self.stored(name)                          # as on disk, to compare with
         self.current = profile if profile else copy.deepcopy(self.saved_copy)
         p = self.current
         self.removed = set()
@@ -698,6 +762,7 @@ class Profiles(Page):
             t.setProperty("lit_row", None)
         if not p:
             self.preview.show_layout(None)
+            self.apply_mode()
             return
         set_hues([a["app"] for a in p["apps"]] + [w["app"] for w in p["windows"]])
         for a in sorted(p["apps"], key=lambda a: (a.get("name") or a["app"]).lower()):
@@ -747,6 +812,7 @@ class Profiles(Page):
             self.browsers.setItem(r, 1, pages)
         self.ticked()
         self.reset_edits()
+        self.apply_mode()
 
     def unsaved_ok(self):
         """With unsaved edits: save them, drop them, or stop (returns False)."""
@@ -806,7 +872,7 @@ class Profiles(Page):
 
     def edit_pages(self, row, _col):
         p = self.need()
-        if not p:
+        if not p or self.readonly:
             return
         index = self.browsers.item(row, 0).data(Qt.UserRole)
         w = p["windows"][index]
@@ -891,9 +957,13 @@ class Profiles(Page):
             return
         if not p:
             return
-        extra = self.choices_for(p, "arrange" if sub == "arrange" else "reload" if sub == "reload" else "unite")
-        if extra is not None:
-            self.app.run_cli(["profile", sub, p["name"]] + extra, done=self.refresh)
+        extra = self.choices_for(p, "arrange" if sub == "arrange" else "reload" if sub == "reload" else "unite",
+                                 plan_from=self.readonly)
+        if extra is None:
+            return
+        target = ["--autosave", str(int(self.picker.currentData().split(":")[1]) + 1)] if self.readonly \
+            else [p["name"]]
+        self.app.run_cli(["profile", sub] + target + extra, done=self.refresh)
 
     UNDO_TEXT = {
         "save": ("Undo Save changes", "Reload the profile as it was before the last Save changes onto the "
@@ -1421,7 +1491,7 @@ class Main(QMainWindow):
             os.makedirs(config.STATE_DIR, exist_ok=True)
             with open(UI_STATE, "w") as f:
                 json.dump({"page": self.stack.currentIndex(), "size": [self.width(), self.height()],
-                           "profile": prof.current["name"] if prof.current else None}, f)
+                           "profile": prof.picker.currentData() if prof.current else None}, f)
         except OSError:
             pass
         event.accept()

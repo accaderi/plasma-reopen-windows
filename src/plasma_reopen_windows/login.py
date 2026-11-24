@@ -81,7 +81,7 @@ def login():
             do_restore()
             return
         set_aside("on_login = %s" % mode)
-        profiles.unite(p)
+        profiles.load(p)          # unite or reload: setting profile_load
         return
     # ask
     names = [p for p in profiles.all_profiles() if not p.get("auto")]
@@ -104,4 +104,4 @@ def login():
         p = profiles.find(answer)
         if p:
             set_aside("profile chosen at login")
-            profiles.unite(p)
+            profiles.load(p)          # unite or reload: setting profile_load

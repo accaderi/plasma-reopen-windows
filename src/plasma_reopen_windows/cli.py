@@ -195,6 +195,21 @@ def do_profile(args):
                 name = " ".join(rest)
             keep_undo = "--no-undo" not in rest        # the settings app's Discard: keep the undo point
             name = " ".join(r for r in rest if r != "--no-undo")
+            if rest[:1] == ["--autosave"]:              # an autosave (1 = newest), as shown in the app
+                from . import autosave
+                snap = autosave.read(int(rest[1]) - 1)
+                if snap is None:
+                    sys.exit("error: no such autosave")
+                p = profiles.migrate(snap)
+                title = "%s autosave (%s)" % (profiles.TITLES.get(sub, "Load"), autosave.describe(p))
+                # never written back: Unite here only brings windows back
+                if sub in ("reload", "switch"):
+                    done = profiles.reload(p, choices=choices, keep_undo=keep_undo, title=title)
+                else:
+                    done = profiles.apply(p, "arrange" if sub == "arrange" else "unite", choices, title=title)
+                if done is False:
+                    sys.exit("cancelled")
+                return
             p = profiles.need(name)
             if sub in ("reload", "switch"):
                 done = profiles.reload(p, choices=choices, keep_undo=keep_undo)
