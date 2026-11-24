@@ -36,7 +36,8 @@ def snapshot(kw, only=None):
             busy += b
     players = mpris_players(kw.bus)
     app_of = {w["pid"]: w["app"] for w in wins}
-    media = [dict({k: p[k] for k in ("title", "position", "status")}, app=app_of.get(p["pid"]))
+    media = [dict({k: p[k] for k in ("title", "position", "status")}, app=app_of.get(p["pid"]),
+                  live=p.get("live", False))
              for p in players if p["title"] and p["status"] in ("Playing", "Paused")]
     from .profiles import one_per_video
     media = one_per_video(media)          # the browser integration reports videos a second time

@@ -8,6 +8,10 @@ from .config import log
 
 # ---- videos and sound output -------------------------------------------------
 MPRIS = "org.mpris.MediaPlayer2"
+# Chrome gives a live stream an endless length (the largest number) and a
+# position that is not the place in the stream (measured: 4 s at 10.5 h);
+# Plasma's browser integration reports the same video with its real place.
+ENDLESS = 2 ** 62
 
 
 def similar(a, b):
@@ -30,6 +34,7 @@ def mpris_players(bus):
         except GLib.Error:
             continue
         md = props.get("Metadata", {})
+        length = md.get("mpris:length", 0)
         try:
             pid = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
                                 "GetConnectionUnixProcessID", GLib.Variant("(s)", (n,)),
@@ -39,7 +44,7 @@ def mpris_players(bus):
         out.append({"bus": n, "title": md.get("xesam:title", ""), "trackid": md.get("mpris:trackid", ""),
                     "url": md.get("xesam:url", ""), "pid": pid,
                     "position": props.get("Position", 0), "status": props.get("PlaybackStatus", ""),
-                    "can_seek": props.get("CanSeek", False)})
+                    "can_seek": props.get("CanSeek", False), "length": length, "live": length >= ENDLESS})
     return out
 
 
@@ -103,15 +108,20 @@ class Media:
             match = [p for p in players if same_video(p["title"], m["title"])]
             if not match:
                 continue        # tab not loaded yet, or an ad is playing first
-            p = match[0]
-            players.remove(p)
+            for p in match:     # the same video reported twice: neither is another saved one
+                players.remove(p)
+            # a live stream: only a report with a real length knows the place
+            # in it (Chrome's own one would jump to the very beginning)
+            p = next((p for p in match if not p["live"]), match[0])
             pos = p["position"]
             # a paused video must show the very picture (1 s); a playing one moves on
             tol = 1000000 if m["status"] == "Paused" else 3000000
-            pos_ok = not p["can_seek"] or (pos >= m["position"] - tol and
-                                           (m["status"] == "Playing" or pos <= m["position"] + tol))
+            no_place = p["live"] or (m.get("live") and not m.get("place"))   # nothing to seek to
+            pos_ok = no_place or not p["can_seek"] or (pos >= m["position"] - tol and
+                                                       (m["status"] == "Playing" or pos <= m["position"] + tol))
             if pos_ok and p["status"] == m["status"]:
-                log("media: \"%s\" back at %d s, %s" % (m["title"][:50], pos // 1000000, m["status"].lower()))
+                log("media: \"%s\" %s, %s" % (m["title"][:50], "live, left where the stream is" if no_place
+                                                else "back at %d s" % (pos // 1000000), m["status"].lower()))
                 self.todo.remove(m)
                 self.done.append(m)
                 continue

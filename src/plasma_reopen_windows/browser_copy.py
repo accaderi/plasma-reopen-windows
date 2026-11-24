@@ -1,5 +1,5 @@
 """plasma-reopen-windows: a copy of the browsers' own session files with each
-autosave, put back before the browser starts again.
+autosave and profile, put back before the browser starts again.
 
 A browser keeps its session file up to date while it runs: Chrome (and
 Chromium-based browsers) "Sessions/Session_*" and "Tabs_*", Firefox
@@ -9,7 +9,7 @@ window, so afterwards it remembers only its last window; with the copy put
 back, it restores all of them itself, as after Save & Restart.
 
 Copies live in ~/.local/state/plasma-reopen-windows/browser-sessions/<stamp>/,
-one folder per autosave. Files a put-back replaces are moved to
+one folder per autosave or profile. Files a put-back replaces are moved to
 browser-sessions/replaced/<app>/ (only the last time is kept), never deleted.
 Nothing is put back while the browser runs.
 """
@@ -174,8 +174,28 @@ def put_back(record, apps):
     return done
 
 
+def records_in(data):
+    """Every browser_sessions record inside a saved file (undo points hold
+    whole profiles)."""
+    if isinstance(data, dict):
+        if isinstance(data.get("browser_sessions"), dict):
+            yield data["browser_sessions"]
+        for v in data.values():
+            yield from records_in(v)
+    elif isinstance(data, list):
+        for v in data:
+            yield from records_in(v)
+
+
+def clean_all():
+    """Delete the copies that no autosave, profile or undo point refers to."""
+    from . import autosave, profiles
+    saved = [p for _, p in autosave.all_saved()] + profiles.all_profiles() + [profiles.undo_point()]
+    clean([r for d in saved for r in records_in(d)])
+
+
 def clean(records):
-    """Delete the copies no autosave refers to any more."""
+    """Delete the copies none of these records refers to."""
     keep = {r["dir"] for r in records if r}
     for d in glob.glob(os.path.join(COPIES, "*")):
         name = os.path.basename(d)

@@ -133,12 +133,12 @@ def take(manual=False):
         # same windows: the newest gets the fresh browser sessions (a tab's
         # history can change without its title), and the current time if asked for
         keep_time(p["saved"] if manual else None, copies)
-        browser_copy.clean([r.get("browser_sessions") for _, r in all_saved()])
+        browser_copy.clean_all()
         return None
     if copies:
         p["browser_sessions"] = copies
     keep(p)
-    browser_copy.clean([r.get("browser_sessions") for _, r in all_saved()])
+    browser_copy.clean_all()
     log("autosave%s: %s" % (" (Save now)" if manual else "", describe(p)))
     return p
 
@@ -159,7 +159,7 @@ def delete():
     for path in SLOTS + [OFFERED]:
         if os.path.exists(path):
             os.remove(path)
-    browser_copy.clean([])
+    browser_copy.clean_all()
     log("autosaves deleted")
 
 

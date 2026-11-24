@@ -220,3 +220,44 @@ class TestSameVideo(unittest.TestCase):
         self.assertFalse(same_video("Episode 1", "Episode 10"))
         self.assertFalse(same_video("Episode 1", "Episode 2 - YouTube"))
         self.assertFalse(same_video("", "x"))
+
+
+class TestLiveVideo(unittest.TestCase):
+    """A live stream (measured 2026-11-24): Chrome's own report has an endless
+    length and 4 s as position at 10.5 h; the browser integration has the place."""
+    H = 3600 * 10 ** 6
+    CHROME = {"bus": "chromium", "title": "Session live - YouTube", "trackid": "/c", "position": 4 * 10 ** 6,
+              "status": "Playing", "can_seek": True, "length": 2 ** 63 - 1, "live": True}
+    PBI = {"bus": "pbi", "title": "Session live", "trackid": "/p", "position": 0, "status": "Playing",
+           "can_seek": True, "length": 11 * H, "live": False}
+
+    def test_saved_with_its_place(self):
+        saved = profiles.one_per_video([
+            {"title": "Session live - YouTube", "position": 4 * 10 ** 6, "status": "Playing",
+             "app": "google-chrome", "live": True},
+            {"title": "Session live", "position": 10 * self.H, "status": "Playing", "app": None, "live": False}])
+        self.assertEqual(saved, [{"title": "Session live - YouTube", "position": 10 * self.H, "status": "Playing",
+                                  "app": "google-chrome", "live": True, "place": True}])
+
+    def run_media(self, saved, players):
+        from plasma_reopen_windows import media
+        bus = mock.Mock()
+        with mock.patch.object(media, "mpris_players", return_value=[dict(p) for p in players]), \
+                mock.patch.object(media, "log"):
+            m = media.Media(bus, [saved])
+            m.step()
+        return m, [(c.args[0], c.args[3]) + ((c.args[4].unpack()[1],) if c.args[4] else ())
+                   for c in bus.call_sync.call_args_list]
+
+    def test_seeks_with_the_report_that_knows_the_place(self):
+        saved = {"title": "Session live - YouTube", "position": 10 * self.H, "status": "Playing",
+                 "app": "google-chrome", "live": True, "place": True}
+        _, calls = self.run_media(saved, [self.CHROME, self.PBI])
+        self.assertEqual(calls, [("pbi", "SetPosition", 10 * self.H)])     # never Chrome's own: that is the start
+
+    def test_no_place_known_no_jump(self):
+        saved = {"title": "Session live - YouTube", "position": 4 * 10 ** 6 + 10 ** 7, "status": "Playing",
+                 "app": "google-chrome", "live": True}
+        m, calls = self.run_media(saved, [self.CHROME])
+        self.assertEqual(calls, [])
+        self.assertFalse(m.pending())

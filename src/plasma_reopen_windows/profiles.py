@@ -148,9 +148,14 @@ def build(name, st, old=None, auto=False):
 
 def save(name, auto=False):
     """Take a profile of what is open now; nothing is closed."""
+    from . import browser_copy
     st = snapshot(KWin())
     p = build(name, st, find(name), auto)
+    copies = browser_copy.take(p)     # the browsers' own sessions, as with an autosave
+    if copies:
+        p["browser_sessions"] = copies
     write_json(path_for(name), p)
+    browser_copy.clean_all()          # the copy of the version written over
     if not auto:
         sync_menu()
     log("profile \"%s\" saved: %d apps, %d windows" % (name, len(p["apps"]), len(p["windows"])))
@@ -334,11 +339,16 @@ TITLES = {"unite": "Unite", "reload": "Reload", "arrange": "Arrange", "undo": "U
 
 def one_per_video(items):
     """Each saved video once: entries that know their app win over copies
-    without one (the Plasma browser integration reports a video a second time)."""
+    without one (the Plasma browser integration reports a video a second time).
+    A live stream keeps the place from a copy that knows it ("place": True;
+    Chrome's own report has none)."""
     out = []
     for m in sorted(items, key=lambda m: m.get("app") is None):
-        if not any(same_video(m["title"], o["title"]) for o in out):
-            out.append(m)
+        o = next((o for o in out if same_video(m["title"], o["title"])), None)
+        if o is None:
+            out.append(dict(m))
+        elif o.get("live") and not o.get("place") and m.get("live") is False:
+            o.update(position=m["position"], place=True)
     return out
 
 
@@ -442,7 +452,13 @@ def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None
         added = merge(p, st, build(p["name"], st, auto=p.get("auto", False)),
                       {wid for _, wid in (placer.matched if placer else [])})
         if added:
+            # the browsers' sessions now hold what the profile holds
+            from . import browser_copy
+            copies = browser_copy.take(p)
+            if copies:
+                p["browser_sessions"] = copies
             write_json(path_for(p["name"]), p)
+            browser_copy.clean_all()
     text = summary(closed, [a.get("name") or a["app"] for a in apps if a["app"] not in running]
                    if mode != "arrange" else [], len(opened), len(placer.matched) if placer else 0, added)
     head = title or "%s %s" % (TITLES[mode], p["name"])
@@ -495,11 +511,34 @@ def save_edit(p, choices=None):
     previous version back and reloads that."""
     progress("saving the profile")
     old = find(p["name"])
+    drop_changed_copies(p, old)
     if old:
         write_json(UNDO, {"undo_kind": "edit", "profile": old, "undo_action": "save"})
     write_json(path_for(p["name"]), migrate(p))
     log("profile \"%s\": changes saved" % p["name"])
     return reload(p, choices, keep_undo=False, title="Save changes %s" % p["name"])
+
+
+def drop_changed_copies(p, old):
+    """A browser whose windows or pages were changed in the editor (switched
+    off, removed, pages edited) would bring the old ones back from its session
+    copy: it restores its own last session instead, and missing windows open
+    from their pages."""
+    rec = p.get("browser_sessions")
+    if not rec or not old:
+        return
+
+    def wins(q, app):
+        if not any(a["app"] == app and a.get("enabled", True) for a in q["apps"]):
+            return []
+        return sorted(json.dumps([w["caption"], w.get("urls"), w.get("active")])
+                      for w in q["windows"] if w["app"] == app)
+    for app in list(rec.get("apps", {})):
+        if wins(p, app) != wins(old, app):
+            del rec["apps"][app]
+            log("profile \"%s\": %s windows changed, its session copy is not used" % (p["name"], app))
+    if not rec["apps"]:
+        del p["browser_sessions"]
 
 
 def can_undo():
@@ -551,9 +590,11 @@ def rename(old, new):
 
 
 def delete(name):
+    from .browser_copy import clean_all
     p = need(name)
     os.remove(path_for(p["name"]))
     sync_menu()
+    clean_all()
 
 
 def clean():
@@ -571,6 +612,7 @@ def export(name, dest):
     p = need(name)
     if os.path.isdir(dest):
         dest = os.path.join(dest, slug(name) + ".json")
+    p.pop("browser_sessions", None)       # files on this computer only
     write_json(dest, p)
     return dest
 
@@ -579,6 +621,7 @@ def import_file(src, overwrite=False):
     p = read(src)
     if find(p["name"]) and not overwrite:
         raise ValueError("a profile %r already exists (import with --overwrite to replace it)" % p["name"])
+    p.pop("browser_sessions", None)
     write_json(path_for(p["name"]), p)
     sync_menu()
     return p

@@ -84,7 +84,7 @@ MSI Bravo 15 C7VF (AMD + NVIDIA) with Fedora, see
 | **Any other app** with a menu entry | started again; what it shows depends on the app |
 | **Window placement** | screen, position, size, virtual desktop, minimized/maximized/full screen |
 | **Window order** | which window lies on top of which, on every screen |
-| **Videos** (YouTube and most sites) | the visible tab's video at the same position, paused if it was paused; the sound stays off until then |
+| **Videos** (YouTube and most sites) | the visible tab's video at the same position, paused if it was paused; the sound stays off until then. A live stream goes back to the same place when the Plasma Browser Integration extension reports it (Chrome alone does not know the place in a live stream; then it continues where the stream is) |
 | **Sound output** | the same device again, found by name (HDMI/DisplayPort monitors swap numbers between boots) |
 
 Not possible: programs running inside a terminal, terminal scrollback, and
@@ -220,6 +220,13 @@ Without PySide6 nothing is missing except this window.
 
 A profile is a named arrangement of apps and windows, like "Work" or "Video
 editing". Saving one closes nothing; loading one does not need a restart.
+Profiles, autosaves and Save Windows Now save the same things: windows and
+places, browser pages, Konsole and Dolphin folders, open files, videos, and a
+copy of each browser's own session (all windows and tabs with their history;
+see [Autosave](#autosave)). When a load starts a browser, it gets that
+session back; a browser whose windows or pages you changed in the editor
+restores its own instead. Export leaves the session copy out (it only fits
+this computer).
 
 ```bash
 plasma-reopen-windows profile save Work      # what is open now, with every window's place
@@ -311,7 +318,7 @@ would come back).
 - At login, after a session that did not end with Save & Shut Down, one
   question offers them (setting `autosave_ask`; once per snapshot).
 - An autosave holds the same as a profile, videos included (one per
-  browser), and in addition a **copy of each browser's own session file**
+  browser), and like a profile a **copy of each browser's own session file**
   (Chrome and Chromium-based browsers: `Sessions/`, Firefox:
   `recovery.jsonlz4`), taken while the browser runs. When a restore starts a
   browser, the copy is put back first, so the browser brings back every

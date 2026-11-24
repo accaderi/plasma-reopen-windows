@@ -115,5 +115,50 @@ class TestCopies(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(bc.COPIES)), ["replaced", "s1"])
 
 
+class TestProfiles(unittest.TestCase):
+    """Profiles get the same copy as autosaves."""
+    def setUp(self):
+        from plasma_reopen_windows import profiles
+        self.pr = profiles
+        self.dir = tempfile.mkdtemp()
+        for x in (mock.patch.object(profiles, "PROFILES_DIR", self.dir),
+                  mock.patch.object(profiles, "sync_menu"), mock.patch.object(profiles, "log")):
+            x.start()
+            self.addCleanup(x.stop)
+
+    def profile(self, caption="A", enabled=True, urls=("u",)):
+        return {"name": "Work", "apps": [{"app": "google-chrome", "enabled": enabled, "launch": {}}],
+                "windows": [{"app": "google-chrome", "caption": caption, "urls": list(urls)}],
+                "browser_sessions": {"dir": "s1", "apps": {"google-chrome": [{"copy": "x", "to": "y"}]}}}
+
+    def test_save_takes_a_copy(self):
+        rec = {"dir": "9", "apps": {"google-chrome": []}}
+        with mock.patch.object(self.pr, "snapshot", return_value={}), mock.patch.object(self.pr, "KWin"), \
+                mock.patch.object(self.pr, "build", return_value={"name": "Work", "apps": [], "windows": []}), \
+                mock.patch.object(bc, "take", return_value=rec), mock.patch.object(bc, "clean_all") as clean:
+            self.pr.save("Work")
+        self.assertEqual(self.pr.find("Work")["browser_sessions"], rec)
+        clean.assert_called_once()
+
+    def test_edits_drop_the_copy_of_that_browser(self):
+        old = self.profile()
+        same = self.profile()
+        self.pr.drop_changed_copies(same, old)
+        self.assertIn("browser_sessions", same)
+        for changed in (self.profile(caption="B"), self.profile(enabled=False), self.profile(urls=("u", "v"))):
+            self.pr.drop_changed_copies(changed, old)
+            self.assertNotIn("browser_sessions", changed)
+
+    def test_export_and_import_leave_it_out(self):
+        self.pr.write_json(self.pr.path_for("Work"), self.profile())
+        dest = self.pr.export("Work", tempfile.mkdtemp())
+        self.assertNotIn("browser_sessions", self.pr.read(dest))
+        self.assertIn("browser_sessions", self.pr.find("Work"))
+
+    def test_records_everywhere(self):
+        undo = {"undo_kind": "edit", "profile": self.profile()}
+        self.assertEqual([r["dir"] for r in bc.records_in(undo)], ["s1"])
+
+
 if __name__ == "__main__":
     unittest.main()
