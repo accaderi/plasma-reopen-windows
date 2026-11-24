@@ -358,7 +358,7 @@ class Placer:
         progress("putting the windows in their saved order")
         order = [wid for c, wid in sorted(self.matched, key=lambda m: m[0]["stack"])]
         if order:
-            n = self.kw.run(JS_RAISE % json.dumps(order))
+            n = self.kw.run(JS_RAISE % (json.dumps(order), json.dumps(not os.environ.get("PRW_FROM_APP"))))
             log("stacked %d windows in the saved order" % n)
 
     def report(self):

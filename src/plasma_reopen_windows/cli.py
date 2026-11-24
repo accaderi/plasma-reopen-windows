@@ -88,12 +88,13 @@ PROFILE_USAGE = """usage: plasma-reopen-windows profile COMMAND
   import FILE [--overwrite]"""
 
 
-def front(show=False):
+def front(show=False, above=None):
     """Started from the settings app: put it on top again (show: also when
-    minimized, for a second start of the app)."""
+    minimized, for a second start of the app; above: keep it above other
+    windows or not)."""
     if os.environ.get("PRW_FROM_APP") or show:
         from .kwin import JS_FRONT
-        KWin().run(JS_FRONT % (json.dumps(show), json.dumps("plasma-reopen-windows-settings")))
+        KWin().run(JS_FRONT % (json.dumps(show), json.dumps(above), json.dumps("plasma-reopen-windows-settings")))
 
 
 def do_profile(args):
@@ -151,7 +152,6 @@ def do_profile(args):
             else:
                 done = {"load": profiles.load, "unite": profiles.unite,
                         "arrange": profiles.arrange}[sub](p, choices=choices)
-            front()
             if done is False:
                 sys.exit("cancelled")
         elif sub == "show" and name:
@@ -180,12 +180,10 @@ def do_profile(args):
                 with open(rest[rest.index("--choices") + 1]) as f:
                     choices = json.load(f)
             done = profiles.save_edit(p, choices)
-            front()
             if done is False:
                 sys.exit("saved; reloading it was cancelled")
         elif sub == "undo":
             profiles.undo()
-            front()
         elif sub == "clean":
             gone = profiles.clean()
             print("deleted %s" % (", ".join(gone) if gone else "nothing (no automatic profiles)"))
@@ -214,6 +212,14 @@ def main():
     for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
         signal.signal(sig, stopped)
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    # Started from the settings app for something that opens windows: keep the
+    # app above them meanwhile, and in front at the end (also after an error).
+    acting = bool(os.environ.get("PRW_FROM_APP")) and cmd in ("profile", "restore", "save")
+    if acting:
+        try:
+            front(above=True)
+        except Exception as e:
+            log("could not keep the settings app above: %s" % e)
     try:
         if cmd in ("shutdown", "reboot"):
             if do_save() is not None:
@@ -226,7 +232,6 @@ def main():
             do_save(only)
         elif cmd == "restore":
             do_restore()
-            front()
         elif cmd == "login":
             from .login import login
             login()
@@ -266,3 +271,9 @@ def main():
         log("ERROR: %s" % e)
         notify("Reopen windows: error", str(e), critical=True)
         raise
+    finally:
+        if acting:
+            try:
+                front(above=False)
+            except Exception as e:
+                log("could not bring the settings app back to the front: %s" % e)

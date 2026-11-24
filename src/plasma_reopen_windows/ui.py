@@ -480,15 +480,26 @@ class Profiles(Page):
 
     def refresh(self):
         keep = self.current["name"] if self.current else self.app.ui_state.get("profile")
-        self.picker.blockSignals(True)
-        self.picker.clear()
-        for p in sorted((p for p in profiles.all_profiles() if not p.get("auto")), key=lambda p: p["name"].lower()):
-            self.picker.addItem(p["name"], p["name"])
-            if p["name"] == keep:
-                self.picker.setCurrentIndex(self.picker.count() - 1)
-        self.picker.blockSignals(False)
+        found = sorted((p for p in profiles.all_profiles() if not p.get("auto")), key=lambda p: p["name"].lower())
+        names = [p["name"] for p in found]
         self.show_undo()
-        self.select()
+        # nothing changed (the usual case after Arrange, Reload ...): no rebuild, no flicker
+        if (not self.save_btn.isEnabled() and self.current and keep in names and
+                names == [self.picker.itemData(i) for i in range(self.picker.count())] and
+                next(p for p in found if p["name"] == keep) == self.current):
+            return
+        self.setUpdatesEnabled(False)           # rebuild in one go, without visible steps
+        try:
+            self.picker.blockSignals(True)
+            self.picker.clear()
+            for name in names:
+                self.picker.addItem(name, name)
+                if name == keep:
+                    self.picker.setCurrentIndex(self.picker.count() - 1)
+            self.picker.blockSignals(False)
+            self.select()
+        finally:
+            self.setUpdatesEnabled(True)
 
     def hover_row(self, table, row):
         """Highlight in the drawing the window(s) of the table row under the cursor."""

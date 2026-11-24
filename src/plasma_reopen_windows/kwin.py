@@ -155,10 +155,13 @@ result(done);
 
 JS_FRONT = r"""
 // the settings app on top again: after a command it started (a minimized
-// window stays minimized), or when it is started a second time (show = true)
-const show = %s;
+// window stays minimized), or when it is started a second time (show = true).
+// above: true/false = keep it above other windows or not (while a command it
+// started opens windows), null = leave as it is
+const show = %s, above = %s;
 for (const w of workspace.windowList()) {
     if (w.desktopFileName != %s) continue;
+    if (above !== null) w.keepAbove = above;
     if (w.minimized && !show) continue;
     w.minimized = false;
     if (workspace.raiseWindow) workspace.raiseWindow(w);
@@ -180,6 +183,7 @@ result(ok);
 
 JS_RAISE = r"""
 const ids = %s;      // bottom to top
+const activate = %s; // false when the settings app started the command: it stays active
 let byId = {};
 for (const w of workspace.windowList()) byId[w.internalId.toString()] = w;
 let top = null, n = 0;
@@ -189,6 +193,6 @@ for (const id of ids) {
     if (workspace.raiseWindow) workspace.raiseWindow(w); else workspace.activeWindow = w;
     top = w; n++;
 }
-if (top) workspace.activeWindow = top;
+if (top && activate) workspace.activeWindow = top;
 result(n);
 """
