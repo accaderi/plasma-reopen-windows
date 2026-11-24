@@ -2,6 +2,7 @@
 
 import difflib
 import re
+import time
 from gi.repository import GLib
 from .config import log
 
@@ -99,6 +100,7 @@ class Media:
         self.todo = [dict(m, tries=0) for m in saved
                      if m["status"] == "Paused" or m["position"] > 5000000]
         self.done = []
+        self.start = time.time()
 
     def step(self):
         if not self.todo:
@@ -114,11 +116,13 @@ class Media:
             # in it (Chrome's own one would jump to the very beginning)
             p = next((p for p in match if not p["live"]), match[0])
             pos = p["position"]
-            # a paused video must show the very picture (1 s); a playing one moves on
+            # a paused video must show the very picture (1 s); a playing one
+            # moves on, by at most the time since the restore began (a live
+            # stream or a site's own "resume" can start it much further on)
             tol = 1000000 if m["status"] == "Paused" else 3000000
+            ahead = tol + (int((time.time() - self.start) * 1000000) if m["status"] == "Playing" else 0)
             no_place = p["live"] or (m.get("live") and not m.get("place"))   # nothing to seek to
-            pos_ok = no_place or not p["can_seek"] or (pos >= m["position"] - tol and
-                                                       (m["status"] == "Playing" or pos <= m["position"] + tol))
+            pos_ok = no_place or not p["can_seek"] or m["position"] - tol <= pos <= m["position"] + ahead
             if pos_ok and p["status"] == m["status"]:
                 log("media: \"%s\" %s, %s" % (m["title"][:50], "live, left where the stream is" if no_place
                                                 else "back at %d s" % (pos // 1000000), m["status"].lower()))

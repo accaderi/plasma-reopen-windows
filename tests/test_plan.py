@@ -261,3 +261,13 @@ class TestLiveVideo(unittest.TestCase):
         m, calls = self.run_media(saved, [self.CHROME])
         self.assertEqual(calls, [])
         self.assertFalse(m.pending())
+
+    def test_playing_far_ahead_is_brought_back(self):
+        """YouTube starts a live stream at its live edge, 1 h after the saved
+        place: that is not "in place" (measured bug)."""
+        saved = {"title": "Session live - YouTube", "position": 10 * self.H, "status": "Playing",
+                 "app": "google-chrome", "live": True, "place": True}
+        _, calls = self.run_media(saved, [self.CHROME, dict(self.PBI, position=11 * self.H)])
+        self.assertEqual(calls, [("pbi", "SetPosition", 10 * self.H)])
+        _, calls = self.run_media(saved, [self.CHROME, dict(self.PBI, position=10 * self.H + 2 * 10 ** 6)])
+        self.assertEqual(calls, [])                 # 2 s on: it is playing, fine

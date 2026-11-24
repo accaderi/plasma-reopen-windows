@@ -65,6 +65,24 @@ class TestAutosave(unittest.TestCase):
             self.assertEqual(autosave.read(0)["browser_sessions"]["dir"], "3")
             self.assertEqual(sorted(r["dir"] for r in clean.call_args[0][0]), ["1", "3"])
 
+    def test_same_windows_new_video_place(self):
+        """Save Windows Now with the same windows still records the video's
+        place now (measured bug: the old place stayed); the earlier one stays."""
+        def take(pos):
+            with mock.patch("plasma_reopen_windows.kwin.KWin"), \
+                    mock.patch("plasma_reopen_windows.session.snapshot", return_value={}), \
+                    mock.patch("plasma_reopen_windows.profiles.build", return_value={
+                        "name": "Autosave", "apps": [], "windows": [win("A")],
+                        "media": [{"title": "V", "position": pos, "status": "Playing"}]}):
+                return autosave.take(manual=True)
+        take(1)
+        take(1)                                     # unchanged: rotated nothing
+        self.take([win("B")], manual=True)          # moves the first one to slot 2
+        take(5)
+        take(9)
+        self.assertEqual(autosave.read(0)["media"][0]["position"], 9)
+        self.assertEqual(autosave.read(1)["windows"][0]["caption"], "B")
+
     def test_empty_desktop_is_not_saved(self):
         self.take([win("A")], manual=True)
         self.assertIsNone(self.take([], manual=True))

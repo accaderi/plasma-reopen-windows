@@ -130,9 +130,14 @@ def take(manual=False):
     newest = read(0)
     copies = browser_copy.take(p)
     if newest and fingerprint(newest) == fingerprint(p):
-        # same windows: the newest gets the fresh browser sessions (a tab's
-        # history can change without its title), and the current time if asked for
-        keep_time(p["saved"] if manual else None, copies)
+        # same windows: the newest is brought up to date in place (videos,
+        # browser sessions: they change without the windows), the earlier one
+        # stays; the time changes only when asked for
+        if not manual:
+            p["saved"] = newest.get("saved", p["saved"])
+        if copies:
+            p["browser_sessions"] = copies
+        write_slot(0, p)
         browser_copy.clean_all()
         return None
     if copies:
@@ -143,15 +148,11 @@ def take(manual=False):
     return p
 
 
-def keep_time(t, copies=None):
-    p = read(0)
-    if p and (t or copies):
-        if t:
-            p["saved"] = t
-        if copies:
-            p["browser_sessions"] = copies
-        with open(SLOTS[0], "w") as f:
-            json.dump(p, f, ensure_ascii=False)
+def write_slot(slot, p):
+    tmp = SLOTS[slot] + ".new"
+    with open(tmp, "w") as f:
+        json.dump(p, f, ensure_ascii=False)
+    os.replace(tmp, SLOTS[slot])
 
 
 def delete():
