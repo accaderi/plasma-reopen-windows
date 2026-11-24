@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Save & Update & Restart
+Comment=Download the system updates, close all apps so they save every window, restart to install the updates, and reopen the apps at the next login
+Exec=@BIN@ update
+Icon=system-software-update
+Categories=System;
+Keywords=update;upgrade;restart;reboot;session;save;restore;

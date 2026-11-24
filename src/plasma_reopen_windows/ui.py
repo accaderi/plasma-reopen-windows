@@ -418,16 +418,23 @@ class Overview(Page):
         QVBoxLayout(box).addWidget(self.info)
         v.addWidget(box)
         row = QHBoxLayout()
-        for label, args, ask in (("Save && Shut Down", ["shutdown"], False),
-                                 ("Save && Restart", ["reboot"], False),
-                                 ("Save without restarting", ["save"], True),
-                                 ("Restore now", ["restore"], False)):
+        buttons = [("Save && Shut Down", ["shutdown"], False),
+                   ("Save && Restart", ["reboot"], False),
+                   ("Save without restarting", ["save"], True),
+                   ("Restore now", ["restore"], False)]
+        if shutil.which("pkcon"):
+            buttons.insert(2, ("Save && Update && Restart", ["update"], False))
+        for label, args, ask in buttons:
             b = QPushButton(label)
             b.clicked.connect(lambda _=False, a=args, q=ask: self.run(a, q))
             row.addWidget(b)
         v.addLayout(row)
         v.addWidget(hint("\"Save without restarting\" closes the apps and saves them; \"Restore now\" opens a "
                          "saved session again. Useful to try it out."))
+        if shutil.which("pkcon"):
+            v.addWidget(hint("\"Save & Update & Restart\" first downloads the system updates while your apps "
+                             "stay open, then saves and restarts; the updates are installed during the restart "
+                             "(the computer restarts twice). No updates: nothing is closed."))
         box = QGroupBox("Autosave")
         bl = QVBoxLayout(box)
         self.auto_info = QLabel()

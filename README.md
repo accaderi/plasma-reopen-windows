@@ -6,7 +6,8 @@ Dolphin, each on its screen, in its place, in the same order on top of each
 other. Like macOS's *"Reopen windows when logging back in"*, which KDE Plasma
 on Wayland does not do. The restart-proof alternative to hibernation.
 
-Adds two entries to the app menu: **Save & Shut Down** and **Save & Restart**.
+Adds entries to the app menu: **Save & Shut Down**, **Save & Restart** and
+**Save & Update & Restart** (installs the system updates during the restart).
 
 ---
 
@@ -21,13 +22,14 @@ Adds two entries to the app menu: **Save & Shut Down** and **Save & Restart**.
 7. [The settings app](#the-settings-app)
 8. [Profiles](#profiles)
 9. [Autosave](#autosave)
-10. [At login](#at-login)
-11. [Settings](#settings)
-12. [How it works](#how-it-works)
-13. [Troubleshooting](#troubleshooting)
-14. [Uninstall](#uninstall)
-15. [Development](#development)
-16. [License](#license)
+10. [Save & Update & Restart](#save--update--restart)
+11. [At login](#at-login)
+12. [Settings](#settings)
+13. [How it works](#how-it-works)
+14. [Troubleshooting](#troubleshooting)
+15. [Uninstall](#uninstall)
+16. [Development](#development)
+17. [License](#license)
 
 ---
 
@@ -143,7 +145,8 @@ bash install.sh
 Installs for your user only, no root needed:
 
 - `~/.local/bin/plasma-reopen-windows` and `~/.local/lib/plasma-reopen-windows/`: the tool
-- "Save & Shut Down" and "Save & Restart" in the app menu
+- "Save & Shut Down" and "Save & Restart" in the app menu, and "Save & Update &
+  Restart" where PackageKit is installed (`pkcon`; Fedora, openSUSE, Ubuntu, ...)
 - `~/.config/autostart/plasma-reopen-windows-restore.desktop`: restores at login
 - `~/.config/plasma-reopen-windows.conf`: settings, all commented out
 
@@ -183,7 +186,7 @@ installer adds **Reopen Windows** to the app menu. Everything in it can also be
 done with the command line; the app only reads and writes the same files.
 
 - **Overview**: the saved session, and the buttons Save & Shut Down, Save &
-  Restart, Save without restarting, Restore now.
+  Restart, Save & Update & Restart, Save without restarting, Restore now.
 - **Profiles**: a drawing of your screens with the profile's windows (each
   app in its own color, numbers = layer on each screen; pointing at a row of
   the tables highlights its windows); switch apps on/off, start delays, the
@@ -203,7 +206,8 @@ done with the command line; the app only reads and writes the same files.
   screens, so the window and the screens always show the same). Every button explains itself in a tooltip. After
   a command, the app comes back on top.
 - **Settings**: every setting with its explanation; the file's comments are kept.
-- **Where to show it**: per entry (Save & Shut Down, Save & Restart, each
+- **Where to show it**: per entry (Save & Shut Down, Save & Restart, Save &
+  Update & Restart, each
   profile, the app itself) a favorite in the Application Launcher, a desktop
   icon, a panel button, and a keyboard shortcut (a combination used elsewhere is
   refused, with its owner). The fixed power row of the Application Launcher
@@ -319,6 +323,30 @@ plasma-reopen-windows autosave delete
 A user timer looks every 5 minutes whether one is due
 (`systemctl --user status plasma-reopen-windows-autosave.timer`).
 
+## Save & Update & Restart
+
+Updates the system the way Discover's "Update and restart" does (PackageKit
+offline updates), and keeps the windows:
+
+1. The updates are downloaded while every app stays open (the settings app
+   shows the progress, the app menu entry a notification). No updates, or the
+   download fails: nothing is closed.
+2. The apps close and are saved, as for Save & Restart (an app that does not
+   close stops it; the downloaded updates stay for later).
+3. The update is armed for the next boot and Plasma restarts. The computer
+   boots once into the update, installs it, and restarts again.
+4. At the login the windows come back.
+
+No password: PackageKit lets the user at the screen download and install
+updates. Flatpaks are not updated (Discover or `flatpak update` does that
+while you work). After a kernel or NVIDIA driver update, the first login can
+take a minute longer while the driver module is built.
+
+```bash
+plasma-reopen-windows update
+pkcon offline-get-prepared      # what is downloaded and waiting
+```
+
 ## At login
 
 What comes back is the setting `on_login`:
@@ -372,7 +400,9 @@ value). `plasma-reopen-windows config` shows them all.
    (their clean quit), Dolphin with its Quit action, Konsole after its tabs
    are recorded, other apps by closing their windows like the ✕ button.
 3. **Shut down / restart** through Plasma (`org.kde.Shutdown`), so Plasma
-   saves nothing of its own on top.
+   saves nothing of its own on top. For Save & Update & Restart the updates
+   are downloaded first (`pkcon update --only-download`) and armed after the
+   apps closed (`pkcon offline-trigger`).
 4. **Restore at login:** starts the apps (Konsole with its tabs), matches the
    new windows to the saved ones by app and title, moves them back, restores
    the stacking order, seeks and pauses the videos, and selects the sound
@@ -387,6 +417,7 @@ value). `plasma-reopen-windows config` shows them all.
 | Apps came back, windows not in place | with "Remember Window Positions" on, that script places the apps it handles and this tool the rest (the log says which); to let this tool place everything, set `place_windows = yes` and turn the script off |
 | Nothing came back | `plasma-reopen-windows status` and the log; the autostart entry must exist in `~/.config/autostart/` |
 | An app should not be touched | add its id to `exclude` |
+| "Update cancelled: the updates could not be downloaded" | no network, or another update is running (Discover): wait and try again; the log has pkcon's last lines |
 | Bluetooth speaker or headset silent after login, or sounds like a phone call | an app that records (OBS, DaVinci Resolve, video calls) is using the speaker's built-in microphone, which forces it into headset mode. Pick the laptop microphone as default input (speaker icon → microphone), then reconnect the speaker. To stop the automatic switch for good, see below |
 | DaVinci Resolve hangs at "Loading Projects" | same cause: its audio input is the Bluetooth device's microphone. Fix as above; it is not caused by this tool |
 

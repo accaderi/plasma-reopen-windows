@@ -10,6 +10,7 @@ rm -fv "$HOME/.local/bin/plasma-reopen-windows-settings" "$HOME/.local/share/app
 rm -fv "$HOME/.local/bin/plasma-reopen-windows" \
        "$HOME/.local/share/applications/plasma-reopen-windows-shutdown.desktop" \
        "$HOME/.local/share/applications/plasma-reopen-windows-reboot.desktop" \
+       "$HOME/.local/share/applications/plasma-reopen-windows-update.desktop" \
        "$HOME/.local/share/applications/plasma-reopen-windows-save-now.desktop" \
        "$HOME/.local/share/applications/plasma-reopen-windows-restore-autosave.desktop" \
        "$HOME/.config/autostart/plasma-reopen-windows-restore.desktop"

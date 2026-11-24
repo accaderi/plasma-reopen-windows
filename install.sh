@@ -37,6 +37,15 @@ for f in shutdown reboot save-now restore-autosave; do
     install -D -m 644 desktop/plasma-reopen-windows-$f.desktop "$APPS/plasma-reopen-windows-$f.desktop"
     sed -i "s|@BIN@|$BIN|" "$APPS/plasma-reopen-windows-$f.desktop"
 done
+# Save & Update & Restart: only where PackageKit is (offline updates)
+if command -v pkcon >/dev/null; then
+    install -D -m 644 desktop/plasma-reopen-windows-update.desktop "$APPS/plasma-reopen-windows-update.desktop"
+    sed -i "s|@BIN@|$BIN|" "$APPS/plasma-reopen-windows-update.desktop"
+    UPDATE=', "Save & Update & Restart"'
+else
+    rm -f "$APPS/plasma-reopen-windows-update.desktop"
+    UPDATE=""
+fi
 install -D -m 644 desktop/plasma-reopen-windows-restore.desktop "$AUTO/plasma-reopen-windows-restore.desktop"
 sed -i "s|@BIN@|$BIN|" "$AUTO/plasma-reopen-windows-restore.desktop"
 # autosave: a user timer looks every 5 minutes whether one is due (setting autosave)
@@ -53,7 +62,7 @@ systemctl --user enable --now plasma-reopen-windows-autosave.timer >/dev/null 2>
 update-desktop-database "$APPS" 2>/dev/null || true
 kbuildsycoca6 2>/dev/null || true
 
-echo "Installed. In the app menu: \"Save & Shut Down\", \"Save & Restart\", \"Save Windows Now\", \"Restore Last Autosave\"."
+echo "Installed. In the app menu: \"Save & Shut Down\", \"Save & Restart\"$UPDATE, \"Save Windows Now\", \"Restore Last Autosave\"."
 if [ "$UI" = yes ]; then
     echo "Settings app: \"Reopen Windows\" in the app menu."
 else

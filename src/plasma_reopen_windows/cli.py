@@ -11,6 +11,8 @@ they were. This tool does it the other way round:
             ~/.local/state/plasma-reopen-windows/session.json
   shutdown  save, then shut down through Plasma
   reboot    save, then restart through Plasma
+  update    download the system updates (PackageKit), save, then restart; the
+            updates are installed during the restart (offline update)
   restore   start the saved apps again and put their windows back
   login     at login (autostart): restore, ask or load a profile (setting on_login)
   profile   named arrangements of apps and windows: profile list / save / load /
@@ -278,9 +280,10 @@ def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     # Started from the settings app for something that opens windows: keep the
     # app above them meanwhile, and in front at the end (also after an error).
+    # Not for update: its download takes minutes while you keep working.
     acting = bool(os.environ.get("PRW_FROM_APP")) and cmd in ("profile", "restore", "save", "autosave")
     # commands that make windows appear or close: no autosave meanwhile
-    loading = cmd in ("shutdown", "reboot", "save", "restore", "login") or (
+    loading = cmd in ("shutdown", "reboot", "update", "save", "restore", "login") or (
         cmd == "profile" and len(sys.argv) > 2 and sys.argv[2] in (
             "load", "unite", "reload", "switch", "arrange", "undo", "save-edit")) or (
         cmd == "autosave" and len(sys.argv) > 2 and sys.argv[2] == "restore")
@@ -296,6 +299,9 @@ def main():
         if cmd in ("shutdown", "reboot"):
             if do_save() is not None:
                 power(cmd)
+        elif cmd == "update":
+            from .updates import do_update
+            do_update()
         elif cmd == "save":
             # Testing: save (optionally only some apps: save chrome konsole ...), no power-off
             only = set(sys.argv[2:]) or None
