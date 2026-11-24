@@ -154,12 +154,15 @@ result(done);
 
 
 JS_FRONT = r"""
-// the settings app on top again after a command it started
+// the settings app on top again: after a command it started (a minimized
+// window stays minimized), or when it is started a second time (show = true)
+const show = %s;
 for (const w of workspace.windowList()) {
-    if (w.desktopFileName == %s && !w.minimized) {
-        if (workspace.raiseWindow) workspace.raiseWindow(w);
-        workspace.activeWindow = w;
-    }
+    if (w.desktopFileName != %s) continue;
+    if (w.minimized && !show) continue;
+    w.minimized = false;
+    if (workspace.raiseWindow) workspace.raiseWindow(w);
+    workspace.activeWindow = w;
 }
 result(0);
 """

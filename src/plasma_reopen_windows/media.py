@@ -62,8 +62,10 @@ class Media:
             p = match[0]
             players.remove(p)
             pos = p["position"]
-            pos_ok = not p["can_seek"] or (pos >= m["position"] - 3000000 and
-                                           (m["status"] == "Playing" or pos <= m["position"] + 3000000))
+            # a paused video must show the very picture (1 s); a playing one moves on
+            tol = 1000000 if m["status"] == "Paused" else 3000000
+            pos_ok = not p["can_seek"] or (pos >= m["position"] - tol and
+                                           (m["status"] == "Playing" or pos <= m["position"] + tol))
             if pos_ok and p["status"] == m["status"]:
                 log("media: \"%s\" back at %d s, %s" % (m["title"][:50], pos // 1000000, m["status"].lower()))
                 self.todo.remove(m)

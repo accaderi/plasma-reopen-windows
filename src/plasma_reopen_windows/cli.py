@@ -88,11 +88,12 @@ PROFILE_USAGE = """usage: plasma-reopen-windows profile COMMAND
   import FILE [--overwrite]"""
 
 
-def front():
-    """Started from the settings app: put it on top again."""
-    if os.environ.get("PRW_FROM_APP"):
+def front(show=False):
+    """Started from the settings app: put it on top again (show: also when
+    minimized, for a second start of the app)."""
+    if os.environ.get("PRW_FROM_APP") or show:
         from .kwin import JS_FRONT
-        KWin().run(JS_FRONT % json.dumps("plasma-reopen-windows-settings"))
+        KWin().run(JS_FRONT % (json.dumps(show), json.dumps("plasma-reopen-windows-settings")))
 
 
 def do_profile(args):
@@ -243,6 +244,8 @@ def main():
                         w["app"][:28], w["output"], w["x"], w["y"], w["width"], w["height"], w["caption"][:50]))
             else:
                 print("nothing saved")
+        elif cmd == "front":                 # used by the settings app: show its window
+            front(show=True)
         elif cmd == "config":
             do_config(sys.argv[2:])
         elif cmd == "windows" and "--json" in sys.argv:

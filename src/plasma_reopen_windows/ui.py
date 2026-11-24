@@ -13,6 +13,7 @@ import sys
 import time
 import zlib
 from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtGui import QBrush, QColor, QCursor, QFont, QIcon, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QToolButton, QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QFrame,
                                QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
@@ -24,6 +25,7 @@ from . import config, placement, profiles
 from .screens import target_geometry
 
 APP_ID = "plasma-reopen-windows-settings"
+SOCKET = "plasma-reopen-windows-settings-%d" % os.getuid()     # one copy of the app per user
 UI_STATE = os.path.join(config.STATE_DIR, "settings-app.json")    # page, profile and size when closed
 
 
@@ -1201,6 +1203,14 @@ class Main(QMainWindow):
         self.procs = []
         self.nav.setCurrentRow(min(max(int(self.ui_state.get("page", 0)), 0), len(self.pages) - 1))
 
+    def come_back(self):
+        """Started a second time: this window to the front (on Wayland only
+        KWin may do that, so the command-line tool asks it)."""
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self.run_cli(["front"])
+
     def closeEvent(self, event):
         """Unsaved profile edits: save, discard or stay; then remember where we were."""
         prof = self.pages[1]
@@ -1255,6 +1265,18 @@ class Main(QMainWindow):
         proc.start(cli_path(), args)
 
 
+def show_running():
+    """If the app is open already, bring that window to the front; True then."""
+    sock = QLocalSocket()
+    sock.connectToServer(SOCKET)
+    if not sock.waitForConnected(500):
+        return False
+    sock.write(b"show\n")
+    sock.waitForBytesWritten(1000)
+    sock.disconnectFromServer()
+    return True
+
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Reopen Windows")
@@ -1268,7 +1290,13 @@ def main():
             sys.exit(1)
         print(json.dumps(choices))
         sys.exit(0)
+    if show_running():
+        sys.exit(0)
     win = Main()
     win.show()
+    QLocalServer.removeServer(SOCKET)        # left over if a copy crashed
+    server = QLocalServer(win)
+    server.newConnection.connect(lambda: (server.nextPendingConnection().deleteLater(), win.come_back()))
+    server.listen(SOCKET)
     QTimer.singleShot(0, lambda: win.pages[win.stack.currentIndex()].refresh())
     sys.exit(app.exec())
