@@ -1219,15 +1219,22 @@ class Main(QMainWindow):
         self.bar = QProgressBar()
         self.bar.setMaximumWidth(220)
         self.bar.setTextVisible(False)
-        # full colour also while another window has the focus (the windows a
-        # command opens usually take it; KDE draws inactive windows paler)
-        pal = self.bar.palette()
-        for role in (QPalette.Highlight, QPalette.HighlightedText):
-            pal.setColor(QPalette.Inactive, role, pal.color(QPalette.Active, role))
-        self.bar.setPalette(pal)
+        # fixed colours (the active window's): the windows a command opens take
+        # the focus, and the desktop draws an inactive window's bar faded
+        pal = self.palette()
+        self.bar.setFixedHeight(10)
+        self.bar.setStyleSheet(
+            "QProgressBar { background: %s; border: 1px solid %s; border-radius: 4px; }"
+            "QProgressBar::chunk { background: %s; border-radius: 3px; }" % (
+                pal.color(QPalette.Active, QPalette.Button).darker(108).name(),
+                pal.color(QPalette.Active, QPalette.Mid).name(),
+                pal.color(QPalette.Active, QPalette.Highlight).name()))
         self.statusBar().addPermanentWidget(self.step, 1)
         self.statusBar().addPermanentWidget(self.bar)
         self.bar.hide()
+        self.msg_timer = QTimer(self)            # clears a message after a while
+        self.msg_timer.setSingleShot(True)
+        self.msg_timer.timeout.connect(lambda: self.busy or self.step.setText(""))
         self.tick = QTimer(self)
         self.tick.setInterval(100)               # smooth bar; the countdown text changes once a second
         self.tick.timeout.connect(self.show_step)
@@ -1268,8 +1275,13 @@ class Main(QMainWindow):
         self.stack.setCurrentIndex(i)
         self.pages[i].refresh()
 
-    def status(self, text):
-        self.statusBar().showMessage(text, 8000)
+    def status(self, text, ms=8000):
+        """A message at the bottom (in the step field: the step field fills the
+        status bar, Qt's own messages would get no room); not while busy."""
+        if self.busy:
+            return
+        self.step.setText(text)
+        self.msg_timer.start(ms)
 
     def run_cli(self, args, detached=False, done=None, quiet=False):
         """Run the command-line tool; the app stays responsive and shows its
@@ -1322,7 +1334,7 @@ class Main(QMainWindow):
             normal = [n for n in notices if not n.get("critical")]
             if normal and code == 0:
                 text = "%s: %s" % (normal[-1]["notice"], normal[-1]["text"]) if normal[-1].get("text") else normal[-1]["notice"]
-            self.statusBar().showMessage(text, 15000)
+            self.status(text, 15000)
             self.procs.remove(proc)
             if done:
                 done()
@@ -1339,7 +1351,7 @@ class Main(QMainWindow):
         commands (Overview, Profiles) off, their earlier state kept."""
         self.busy = on
         if on:
-            self.statusBar().clearMessage()
+            self.msg_timer.stop()
             self.saved_buttons = {b: b.isEnabled() for page in self.pages[:2]
                                   for b in page.findChildren(QAbstractButton)}
             for b in self.saved_buttons:
