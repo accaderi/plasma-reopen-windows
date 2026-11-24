@@ -14,7 +14,7 @@ import time
 import zlib
 from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtGui import QBrush, QColor, QCursor, QFont, QIcon, QKeySequence, QPainter, QPen, QPixmap
+from PySide6.QtGui import QBrush, QColor, QPalette, QCursor, QFont, QIcon, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QAbstractButton, QProgressBar, QToolButton, QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QFrame,
                                QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QInputDialog, QKeySequenceEdit, QLabel, QLineEdit, QListWidget,
@@ -1219,6 +1219,12 @@ class Main(QMainWindow):
         self.bar = QProgressBar()
         self.bar.setMaximumWidth(220)
         self.bar.setTextVisible(False)
+        # full colour also while another window has the focus (the windows a
+        # command opens usually take it; KDE draws inactive windows paler)
+        pal = self.bar.palette()
+        for role in (QPalette.Highlight, QPalette.HighlightedText):
+            pal.setColor(QPalette.Inactive, role, pal.color(QPalette.Active, role))
+        self.bar.setPalette(pal)
         self.statusBar().addPermanentWidget(self.step, 1)
         self.statusBar().addPermanentWidget(self.bar)
         self.bar.hide()
