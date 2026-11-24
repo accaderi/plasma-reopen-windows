@@ -210,12 +210,12 @@ def do_restore(state=None):
     kw = KWin()
     before = {w["id"] for w in kw.windows()["windows"]}
     bring_back(kw, state["launch"], state["windows"], before, placement_for(state),
-               media_items=state.get("media", []), sound=state.get("sound"), pause_unknown=True)
+               media_items=state.get("media", []), sound=state.get("sound"), pause_unknown=True, login=True)
     notify("Session restored", "%d apps started again" % len(state["launch"]))
 
 
 def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=None,
-               timeout=None, settle=20, strict_ids=(), fixed=None, pause_unknown=False):
+               timeout=None, settle=20, strict_ids=(), fixed=None, pause_unknown=False, login=False):
     """Start apps, then put windows in place (matched by app and title), seek
     and pause videos, select the sound output, and restore the stacking order.
     ignore_ids: windows that must not be matched (already open before)."""
@@ -225,9 +225,10 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
     unknown = Unknown(kw.bus, [m["title"] for m in media_items]) \
         if pause_unknown and CFG.get("pause_unknown_videos") == "yes" else None
     # Videos start playing as soon as their tab loads, before they can be
-    # paused again: keep the sound off until then (at most 30 s).
-    muting = media.pending()
-    if muting:
+    # paused again (saved ones put back, unknown ones paused): keep the sound
+    # off until then (at most 30 s).
+    muting = media.pending() or bool(unknown and launches)
+    if muting and login:
         wait_for_quiet()          # let the login sound finish
     muted = mute_outputs() if muting else []
     placer = None
@@ -235,6 +236,7 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
         relaunch(launches, kw)
         unmute_at = time.time() + 30      # counted from when all apps are started
         watch_until = time.time() + 25 if unknown else 0
+        quiet_until = time.time() + 12 if unknown and launches else 0   # unknown videos start in a few s
         placer = Placer(kw, {"windows": windows}, set(ignore_ids), move=move, strict_ids=strict_ids, fixed=fixed)
         end = time.time() + (timeout or int(CFG.get("restore_timeout")))
         while time.time() < end:
@@ -245,7 +247,7 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
             media.step()
             if unknown:
                 unknown.step()
-            if muting and (not media.pending() or time.time() > unmute_at):
+            if muting and ((not media.pending() and time.time() > quiet_until) or time.time() > unmute_at):
                 unmute_outputs(muted)
                 muted, muting = [], False
             placer.step()

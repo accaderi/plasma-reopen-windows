@@ -49,7 +49,7 @@ def mute_outputs(quiet=False):
             subprocess.run(["wpctl", "set-mute", str(s["id"]), "1"], check=False)
             names.append(s["name"])
     if names and not quiet:
-        log("sound muted until the videos are back at their position")
+        log("sound muted until videos are back at their position or paused")
     return names
 
 
