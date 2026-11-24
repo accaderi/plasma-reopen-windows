@@ -109,9 +109,15 @@ class CheckHeader(QHeaderView):
     def __init__(self, parent):
         super().__init__(Qt.Horizontal, parent)
         self.state = Qt.Checked
+        self.box_enabled = True
 
     def set_state(self, state):
         self.state = state
+        self.viewport().update()
+
+    def set_box_enabled(self, on):
+        """Greyed and not clickable (for a read-only autosave)."""
+        self.box_enabled = on
         self.viewport().update()
 
     def paintSection(self, painter, rect, index):
@@ -122,12 +128,14 @@ class CheckHeader(QHeaderView):
             opt = QStyleOptionButton()
             size = self.style().pixelMetric(QStyle.PM_IndicatorWidth)
             opt.rect = QRect(rect.center().x() - size // 2, rect.center().y() - size // 2, size, size)
-            opt.state = QStyle.State_Enabled | {Qt.Checked: QStyle.State_On, Qt.Unchecked: QStyle.State_Off}.get(
-                self.state, QStyle.State_NoChange)
+            opt.state = (QStyle.State_Enabled if self.box_enabled else QStyle.State_None) | {
+                Qt.Checked: QStyle.State_On, Qt.Unchecked: QStyle.State_Off}.get(self.state, QStyle.State_NoChange)
+            if not self.box_enabled:
+                opt.palette.setCurrentColorGroup(QPalette.Disabled)
             self.style().drawPrimitive(QStyle.PE_IndicatorCheckBox, opt, painter)
 
     def mousePressEvent(self, event):
-        if self.logicalIndexAt(event.position().toPoint()) == 0:
+        if self.box_enabled and self.logicalIndexAt(event.position().toPoint()) == 0:
             self.clicked_box.emit()
 
 
@@ -582,8 +590,12 @@ class Profiles(Page):
             self.picker.blockSignals(True)
             self.picker.clear()
             for label, data in entries:
-                if data.startswith("@autosave:") and data.endswith(":0") and found:
-                    self.picker.insertSeparator(self.picker.count())
+                if data.startswith("@autosave:") and data.endswith(":0"):
+                    # a heading (Breeze draws combo-box separators nearly invisible)
+                    self.picker.addItem("Autosaves")
+                    head = self.picker.model().item(self.picker.count() - 1)
+                    head.setEnabled(False)
+                    head.setSelectable(False)
                 self.picker.addItem(label, data)
                 if data == keep:
                     self.picker.setCurrentIndex(self.picker.count() - 1)
@@ -617,6 +629,7 @@ class Profiles(Page):
             if b.text() in ("Write over from screen", "Use at login", "Rename…", "Export…", "Delete"):
                 b.setEnabled(not ro)
         self.keep_btn.setEnabled(ro)
+        self.all.set_box_enabled(not ro)
 
     def keep_autosave(self):
         """Keep the autosave shown as a profile with a name."""
