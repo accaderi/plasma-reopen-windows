@@ -46,15 +46,23 @@ puts every window back.
 
 ## Hibernation or Save & Shut Down?
 
-| | Hibernation | Save & Shut Down |
+| | Hibernation | Save & Shut Down / Restart |
 |---|---|---|
-| What comes back | everything, exactly (running programs, terminal output, unsaved work) | apps and windows; the content as far as each app restores it |
-| Kernel or system updates | not applied | applied (it is a real restart) |
-| Setup | swap, kernel and driver settings; hardware dependent | none, per user |
-| Speed | about 1–2 minutes | apps take their normal start time |
+| What comes back | everything, exactly: running programs, terminal output, unsaved work, every tab and every video | apps and windows on their screens, in their order; the content as far as each app restores it (browser tabs, open files, terminal folders); one video per browser at its position |
+| Unsaved work | kept as it is | the app asks before closing; the shutdown waits until you answer |
+| Limit | the image must fit in about half of the RAM; what decides is the memory that cannot be swapped out, mostly the graphics drivers' (2–3 GB with three screens on a 16 GB laptop), so it can be refused at one try and work at the next | none |
+| When it goes wrong | refused: nothing happens, you keep working. Rarely the machine hangs while writing the image: then the session is lost (once in about 40 attempts while testing) | an app that does not close stops the shutdown, and the apps closed so far open again |
+| Kernel and system updates | not applied | applied: it is a real restart |
+| Setup | swap partition at least as big as the RAM, kernel and driver settings, Secure Boot off; depends on the hardware | per user, no system changes |
+| Time | about 1 minute to hibernate and 1 to wake | a normal shutdown; after login the apps take their normal start time |
+| Power while off | none | none |
 
-Use hibernation for "continue exactly here", Save & Shut Down / Restart for
-updates and whenever hibernation is not available. For hibernation on an
+Use hibernation for "continue exactly here" after a short break. Use Save &
+Shut Down / Restart for updates, longer breaks, and whenever hibernation is
+refused or not available. With both installed: hibernate, and if it is
+refused, Save & Shut Down.
+
+For hibernation on an
 MSI Bravo 15 C7VF (AMD + NVIDIA) with Fedora, see
 [msi-bravo15-c7vf-fedora-hibernation-fix](https://github.com/accaderi/msi-bravo15-c7vf-fedora-hibernation-fix).
 
