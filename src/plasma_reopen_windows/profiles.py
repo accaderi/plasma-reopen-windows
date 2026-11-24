@@ -614,7 +614,7 @@ def export(name, dest, sessions=False):
     p = need(name)
     if os.path.isdir(dest):
         dest = os.path.join(dest, slug(name) + (".zip" if sessions else ".json"))
-    if sessions and p.get("browser_sessions"):
+    if sessions:                          # a zip also without a copy (an older profile): the name fits
         from .browser_copy import pack
         pack(p, dest)
         return dest
