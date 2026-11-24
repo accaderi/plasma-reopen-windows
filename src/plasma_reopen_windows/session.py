@@ -10,7 +10,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from .apps import CLOSE_TIMEOUT, ORDER, app_kind, app_name, find_desktop, ignored, konsole_tabs, launch_spec, quit_app, real_path, relaunch, wait_closed
 from .audio import default_sink, mute_outputs, set_sound_output, unmute_outputs, wait_for_quiet
-from .config import CFG, STATE, STATE_DIR, log, notify
+from .config import CFG, STATE, STATE_DIR, log, notify, progress
 from .kwin import JS_PLACE, JS_RAISE, KWin
 from .media import Media, Unknown, mpris_players, similar
 from .screens import annotate, target_geometry
@@ -54,7 +54,8 @@ def close_apps(kw, apps, konsole, files, what="Shutdown"):
     if one did not close (then the ones closed so far are started again)."""
     launches = []
     timeout = int(CFG.get("close_timeout"))
-    for app in sorted(apps, key=lambda a: ORDER[app_kind(a)]):
+    for n, app in enumerate(sorted(apps, key=lambda a: ORDER[app_kind(a)])):
+        progress("closing %s" % app_name(find_desktop(app, apps[app][0]) or app), n, len(apps))
         kind, ws = app_kind(app), apps[app]
         launch = launch_spec(app, kind, ws, konsole, files)
         pids = quit_app(kw, app, kind, ws)
@@ -251,6 +252,8 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
                 unmute_outputs(muted)
                 muted, muting = [], False
             placer.step()
+            report_wait(placer, media, len(windows) + len(fixed or {}), end, settle, unmute_at if muting else 0,
+                        watch_until)
             # done, or no further window for a while (an app may open fewer windows)
             if not sound and not media.todo and time.time() > watch_until and \
                     (not placer.todo or time.time() - placer.last_match > settle):
@@ -269,6 +272,22 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
             time.sleep(2 if launches else 0.3)    # let other scripts finish placing windows first
             placer.restack()
     return placer
+
+
+def report_wait(placer, media, total, end, settle, unmute_at, watch_until):
+    """What bring_back is waiting for, for the settings app's progress bar."""
+    now = time.time()
+    placed = len(placer.matched)
+    if media.todo:
+        progress("putting %d video%s back at its place (sound off meanwhile)" % (
+            len(media.todo), "s" if len(media.todo) > 1 else ""), until=unmute_at or None)
+    elif placer.todo:
+        progress("waiting for windows: %d of %d in place" % (placed, total), placed, total,
+                 until=min(end, placer.last_match + settle))
+    elif watch_until > now:
+        progress("watching for videos that start by themselves", until=watch_until)
+    else:
+        progress("windows in place", placed, total)
 
 
 class Placer:
@@ -336,6 +355,7 @@ class Placer:
                 "keepAbove": c["keepAbove"], "minimized": c["minimized"]}
 
     def restack(self):
+        progress("putting the windows in their saved order")
         order = [wid for c, wid in sorted(self.matched, key=lambda m: m[0]["stack"])]
         if order:
             n = self.kw.run(JS_RAISE % json.dumps(order))

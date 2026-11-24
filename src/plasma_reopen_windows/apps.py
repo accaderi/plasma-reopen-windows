@@ -12,7 +12,7 @@ import time
 import urllib.parse
 import xml.etree.ElementTree as ET
 from gi.repository import Gio, GLib
-from .config import CFG, STATE_DIR, log
+from .config import CFG, STATE_DIR, log, progress
 from .kwin import JS_ACTIVATE, JS_CLOSE
 
 
@@ -327,7 +327,9 @@ def relaunch(launches, kw=None):
         path = os.path.join(STATE_DIR, f)
         if f.startswith("konsole-tabs-") and time.time() - os.path.getmtime(path) > 3600:
             os.remove(path)
-    for spec in launches:
+    for n, spec in enumerate(launches):
+        what = "opening a window of" if "cmd" in spec else "starting"
+        progress("%s %s" % (what, app_name(spec.get("desktop") or spec["app"])), n, len(launches))
         if spec in late and spec is late[0]:
             time.sleep(max(LATE_START[l["app"]] for l in late))
         if spec.get("delay"):

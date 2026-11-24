@@ -24,7 +24,7 @@ import tempfile
 import time
 from .browsers import tabs_of, window_title
 from .apps import app_kind, app_name, find_desktop, ignored, launch_spec
-from .config import CFG, STATE_DIR, log, notify
+from .config import CFG, STATE_DIR, log, notify, progress
 UNDO = os.path.join(STATE_DIR, "undo.json")   # what was open before the last load (not a profile)
 from .kwin import KWin
 from .media import mpris_players, same_video, similar
@@ -366,6 +366,7 @@ def missing_after_start(todo, started, opened):
 def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None, both_ways=False):
     """Unite or arrange (reload closes the other apps first, then comes here).
     Returns False if the user cancelled."""
+    progress("looking at the open windows")
     kw = KWin()
     snap = kw.windows()
     pl = make_plan(p, mode, snap)
@@ -417,6 +418,7 @@ def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None
     again = [spec for _, spec in pairs if spec]
     if again:
         log("%d windows did not come back with their app: opening them" % len(again))
+        progress("opening %d windows that did not come back" % len(again))
         now = {w["id"] for w in kw.windows()["windows"]}
         playing = [pl["title"] for pl in mpris_players(kw.bus) if pl["title"]]
         later = bring_back(kw, again, left, now, {w["app"] for w in left}, timeout=60, settle=8, pause_unknown=True,
@@ -428,6 +430,7 @@ def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None
                 placer.restack()          # all windows in the saved order, the late ones included
     added = []
     if both_ways:                         # Unite: what is open now also goes into the profile
+        progress("adding windows that are not in the profile yet")
         st = snapshot(kw)
         added = merge(p, st, build(p["name"], st, auto=p.get("auto", False)),
                       {wid for _, wid in (placer.matched if placer else [])})
@@ -462,6 +465,7 @@ def reload(p, choices=None, ask=True, keep_undo=True, title=None):
             if choices is None:
                 log("profile \"%s\": cancelled" % p["name"])
                 return False
+    progress("saving what is open now (for undo)")
     st = snapshot(kw)
     if st["busy"]:
         notify("Reload cancelled", "Programs are still running in Konsole: %s." % busy_message(st["busy"]),
@@ -482,6 +486,7 @@ def save_edit(p, choices=None):
     """Save a profile edited in the settings app (ticks, start delays, pages,
     removed apps), then reload it so the screens show it. "undo" puts the
     previous version back and reloads that."""
+    progress("saving the profile")
     old = find(p["name"])
     if old:
         write_json(UNDO, {"undo_kind": "edit", "profile": old, "undo_action": "save"})

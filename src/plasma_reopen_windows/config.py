@@ -1,6 +1,7 @@
 """plasma-reopen-windows: paths, settings, log and notifications."""
 
 import configparser
+import json
 import os
 import re
 import subprocess
@@ -270,6 +271,29 @@ def log(msg):
         pass
     try:
         print(msg, flush=True)
+    except (OSError, ValueError):
+        pass
+
+
+PROGRESS_PREFIX = "@@"
+_last_progress = None
+
+
+def progress(step, done=None, total=None, until=None):
+    """One step for the settings app's progress bar: a line on stdout, only
+    when the app started this command (it reads these lines as they come).
+    done/total: a count ("3 of 11"); until: a time limit (epoch seconds) the
+    app counts down to."""
+    global _last_progress
+    if not os.environ.get("PRW_FROM_APP"):
+        return
+    line = PROGRESS_PREFIX + json.dumps({"step": step, "done": done, "total": total,
+                                         "until": round(until) if until else None})
+    if line == _last_progress:
+        return
+    _last_progress = line
+    try:
+        print(line, flush=True)
     except (OSError, ValueError):
         pass
 

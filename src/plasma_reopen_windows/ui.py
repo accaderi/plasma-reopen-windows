@@ -15,7 +15,7 @@ import zlib
 from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtGui import QBrush, QColor, QCursor, QFont, QIcon, QKeySequence, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import (QToolButton, QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QFrame,
+from PySide6.QtWidgets import (QAbstractButton, QProgressBar, QToolButton, QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QFrame,
                                QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QInputDialog, QKeySequenceEdit, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
@@ -450,7 +450,8 @@ class Profiles(Page):
         delete = button("Delete", self.delete, "Delete this profile.")
         delete.setStyleSheet("QPushButton { background: #da4453; color: white; border: 1px solid #b83240;"
                              " border-radius: 3px; padding: 5px 12px; }"
-                             "QPushButton:hover { background: #e05a68; }")
+                             "QPushButton:hover { background: #e05a68; }"
+                             "QPushButton:disabled { background: #eab3b9; border-color: #e0a0a7; }")
         line.addWidget(delete)
         v.addLayout(line)
         self.dirty(False)
@@ -1201,6 +1202,18 @@ class Main(QMainWindow):
         h.addWidget(self.stack, 1)
         self.setCentralWidget(body)
         self.procs = []
+        # progress of the command running now: step text with count and countdown, and a bar
+        self.busy, self.cur, self.saved_buttons = False, {}, {}
+        self.step = QLabel()
+        self.bar = QProgressBar()
+        self.bar.setMaximumWidth(220)
+        self.bar.setTextVisible(False)
+        self.statusBar().addPermanentWidget(self.step, 1)
+        self.statusBar().addPermanentWidget(self.bar)
+        self.bar.hide()
+        self.tick = QTimer(self)
+        self.tick.setInterval(500)
+        self.tick.timeout.connect(self.show_step)
         self.nav.setCurrentRow(min(max(int(self.ui_state.get("page", 0)), 0), len(self.pages) - 1))
 
     def come_back(self):
@@ -1209,7 +1222,7 @@ class Main(QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
-        self.run_cli(["front"])
+        self.run_cli(["front"], quiet=True)
 
     def closeEvent(self, event):
         """Unsaved profile edits: save, discard or stay; then remember where we were."""
@@ -1241,28 +1254,92 @@ class Main(QMainWindow):
     def status(self, text):
         self.statusBar().showMessage(text, 8000)
 
-    def run_cli(self, args, detached=False, done=None):
-        """Run the command-line tool; the app stays responsive."""
+    def run_cli(self, args, detached=False, done=None, quiet=False):
+        """Run the command-line tool; the app stays responsive and shows its
+        progress (quiet: a helper call, no progress, never refused)."""
         if detached:
             QProcess.startDetached(cli_path(), args)
             self.status("Started: %s" % " ".join(args))
             return
+        if self.busy and not quiet:
+            self.status("Still working on the last command…")
+            return
         proc = QProcess(self)
         proc.setProcessChannelMode(QProcess.MergedChannels)
         env = QProcessEnvironment.systemEnvironment()
-        env.insert("PRW_FROM_APP", "1")          # the tool puts this window on top again when done
+        env.insert("PRW_FROM_APP", "1")          # progress lines, and this window on top again when done
         proc.setProcessEnvironment(env)
         self.procs.append(proc)
-        self.status("Running: %s …" % " ".join(args))
+        buf, out = [""], []
+
+        def read():
+            buf[0] += bytes(proc.readAllStandardOutput()).decode(errors="replace")
+            *lines, buf[0] = buf[0].split("\n")
+            for line in lines:
+                if line.startswith(config.PROGRESS_PREFIX):
+                    if not quiet:
+                        try:
+                            self.cur = json.loads(line[len(config.PROGRESS_PREFIX):])
+                        except ValueError:
+                            continue
+                        self.show_step()
+                elif line.strip():
+                    out.append(line.strip())
 
         def finished(code, _status):
-            out = bytes(proc.readAll()).decode(errors="replace").strip().splitlines()
-            self.status((out[-1] if out else "Done") if code == 0 else "Failed: %s" % (out[-1] if out else code))
+            buf[0] += "\n"
+            read()
+            if not quiet:
+                self.set_busy(False)
+            text = (out[-1] if out else "Done") if code == 0 else "Failed: %s" % (out[-1] if out else code)
+            self.statusBar().showMessage(text, 15000)
             self.procs.remove(proc)
             if done:
                 done()
+        proc.readyReadStandardOutput.connect(read)
         proc.finished.connect(finished)
+        if not quiet:
+            self.set_busy(True)
+            self.cur = {"step": "starting: " + " ".join(args[:2])}
+            self.show_step()
         proc.start(cli_path(), args)
+
+    def set_busy(self, on):
+        """While a command runs: progress shown, the buttons that start
+        commands (Overview, Profiles) off, their earlier state kept."""
+        self.busy = on
+        if on:
+            self.statusBar().clearMessage()
+            self.saved_buttons = {b: b.isEnabled() for page in self.pages[:2]
+                                  for b in page.findChildren(QAbstractButton)}
+            for b in self.saved_buttons:
+                b.setEnabled(False)
+            self.bar.show()
+            self.tick.start()
+        else:
+            for b, was in self.saved_buttons.items():
+                b.setEnabled(was)
+            self.saved_buttons = {}
+            self.tick.stop()
+            self.bar.hide()
+            self.step.setText("")
+
+    def show_step(self):
+        """The current step: text, "3 of 11", seconds left; the bar."""
+        if not self.busy:
+            return
+        c = self.cur
+        text = c.get("step") or "working"
+        if c.get("total"):
+            self.bar.setRange(0, c["total"])
+            self.bar.setValue(c.get("done") or 0)
+        else:
+            self.bar.setRange(0, 0)               # moving bar: no count for this step
+        if c.get("until"):
+            left = int(c["until"] - time.time())
+            if left > 0:
+                text += "  –  up to %d s" % left
+        self.step.setText(text[0].upper() + text[1:] + " …")
 
 
 def show_running():
