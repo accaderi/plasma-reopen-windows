@@ -310,8 +310,11 @@ would come back).
 - No snapshot is taken while a load or restore is running.
 - At login, after a session that did not end with Save & Shut Down, one
   question offers them (setting `autosave_ask`; once per snapshot).
-- Not in an autosave: unsaved work, terminal output, video positions; those
-  need hibernation or Save & Shut Down.
+- An autosave holds the same as a profile, videos included (one per
+  browser). Not in it: unsaved work, terminal output, and each tab's
+  back/forward history (browser windows the browser does not restore itself
+  are opened again from their page addresses); hibernation keeps all of it,
+  Save & Shut Down the browser's own history.
 
 ```bash
 plasma-reopen-windows autosave now            # save now
