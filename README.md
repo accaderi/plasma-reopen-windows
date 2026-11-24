@@ -225,8 +225,23 @@ places, browser pages, Konsole and Dolphin folders, open files, videos, and a
 copy of each browser's own session (all windows and tabs with their history;
 see [Autosave](#autosave)). When a load starts a browser, it gets that
 session back; a browser whose windows or pages you changed in the editor
-restores its own instead. Export leaves the session copy out (it only fits
-this computer).
+restores its own instead.
+
+**Export / Import** carry a profile as a file: a backup, another computer, or
+editing by hand. Screens are matched by monitor model and serial and scaled
+if the resolution differs.
+
+- *Profile only* (`.json`): everything except the tab history; browser
+  windows open from their saved pages.
+- *With browser sessions* (`.zip`): also the session copy, so every tab
+  comes back with its Back/Forward history. It holds your browsing history:
+  keep the file private. On another computer, Chrome's session goes into the
+  same Chrome profile folder there and Firefox's into its default profile.
+
+```bash
+plasma-reopen-windows profile export Work ~/Backup --with-sessions   # Work.zip
+plasma-reopen-windows profile import ~/Backup/Work.zip
+```
 
 ```bash
 plasma-reopen-windows profile save Work      # what is open now, with every window's place

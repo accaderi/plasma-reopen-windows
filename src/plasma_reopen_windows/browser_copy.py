@@ -14,12 +14,14 @@ browser-sessions/replaced/<app>/ (only the last time is kept), never deleted.
 Nothing is put back while the browser runs.
 """
 
+import configparser
 import glob
 import json
 import os
 import shutil
 import struct
 import time
+import zipfile
 from .browsers import CHROME_DIRS, read_mozlz4
 from .config import STATE_DIR, log
 
@@ -27,6 +29,8 @@ COPIES = os.path.join(STATE_DIR, "browser-sessions")
 REPLACED = os.path.join(COPIES, "replaced")
 FIREFOX_FILES = ("sessionstore-backups/recovery.jsonlz4", "sessionstore.jsonlz4")
 # what Firefox reads at start, first found first: moved away before a put-back
+FIREFOX_DIRS = ("~/.config/mozilla/firefox", "~/.mozilla/firefox",
+                "~/.var/app/org.mozilla.firefox/.mozilla/firefox")
 FIREFOX_READS = ("sessionstore.jsonlz4", "sessionstore-backups/recovery.jsonlz4",
                  "sessionstore-backups/recovery.baklz4")
 
@@ -201,3 +205,92 @@ def clean(records):
         name = os.path.basename(d)
         if name != "replaced" and name not in keep:
             shutil.rmtree(d, ignore_errors=True)
+
+
+# ---- a profile with its session copy in one file (export / import) --------------------
+def pack(p, dest):
+    """Write the profile and the files of its session copy into one zip file."""
+    rec = p.get("browser_sessions")
+    with zipfile.ZipFile(dest + ".new", "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("profile.json", json.dumps(p, indent=1, ensure_ascii=False))
+        for files in (rec or {}).get("apps", {}).values():
+            for f in files:
+                src = os.path.join(COPIES, rec["dir"], f["copy"])
+                if os.path.exists(src):
+                    z.write(src, "sessions/" + f["copy"])
+    os.replace(dest + ".new", dest)
+
+
+def firefox_default_profile():
+    """The profile Firefox starts with on this computer, or None."""
+    for base in FIREFOX_DIRS:
+        base = os.path.expanduser(base)
+        ini = configparser.ConfigParser(strict=False, interpolation=None)
+        if not ini.read(os.path.join(base, "profiles.ini")):
+            continue
+        # the install's own default first (what Firefox really uses), then Default=1
+        paths = [ini[s]["Default"] for s in ini.sections() if s.startswith("Install") and "Default" in ini[s]]
+        paths += [ini[s]["Path"] for s in ini.sections()
+                  if s.startswith("Profile") and ini[s].get("Default") == "1" and "Path" in ini[s]]
+        for path in paths:
+            full = path if os.path.isabs(path) else os.path.join(base, path)
+            if os.path.isdir(full):
+                return full
+    return None
+
+
+def rehome(p):
+    """Targets of the session copy on this computer: unchanged where the
+    folder exists (the same computer); else Chrome's into the same profile
+    folder of this computer's browser folder, Firefox's into its default
+    profile (also used to start it). Files with no place are left out."""
+    rec = p.get("browser_sessions") or {}
+    for app, files in list(rec.get("apps", {}).items()):
+        kept = []
+        for f in files:
+            to = f["to"]
+            if not os.path.isdir(os.path.dirname(to)):
+                if app in CHROME_DIRS:
+                    parts = to.split(os.sep)[-3:]           # <profile>/Sessions/<file>
+                    to = os.path.join(os.path.expanduser(CHROME_DIRS[app]), *parts)
+                else:
+                    prof = firefox_default_profile()
+                    to = os.path.join(prof, "sessionstore.jsonlz4") if prof else None
+                    for a in p.get("apps", []):
+                        if a["app"] == app and prof:
+                            a.setdefault("launch", {})["firefox_profiles"] = [prof]
+            if to and os.path.isdir(os.path.dirname(to)):
+                kept.append(dict(f, to=to))
+        if kept:
+            rec["apps"][app] = kept
+        else:
+            del rec["apps"][app]
+    if rec and not rec.get("apps"):
+        p.pop("browser_sessions", None)
+    return p
+
+
+def unpack(src):
+    """The profile from a zip made by pack(), its session copy stored as a new
+    copy of this computer (only the files the profile names are read)."""
+    with zipfile.ZipFile(src) as z:
+        p = json.loads(z.read("profile.json"))
+        rec = p.get("browser_sessions")
+        if not rec:
+            return p
+        stamp = "%d" % (time.time() * 1000)
+        names = set(z.namelist())
+        for app, files in list(rec.get("apps", {}).items()):
+            kept = []
+            for f in files:
+                rel = os.path.normpath(f.get("copy", ""))
+                if rel.startswith(("..", "/")) or "sessions/" + f["copy"] not in names:
+                    continue                    # never outside the copy folder
+                target = os.path.join(COPIES, stamp, rel)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "wb") as out:
+                    out.write(z.read("sessions/" + f["copy"]))
+                kept.append(dict(f, copy=rel))
+            rec["apps"][app] = kept
+        rec["dir"] = stamp
+    return rehome(p)

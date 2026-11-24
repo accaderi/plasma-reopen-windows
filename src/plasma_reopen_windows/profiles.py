@@ -608,22 +608,39 @@ def clean():
     return gone
 
 
-def export(name, dest):
+def export(name, dest, sessions=False):
+    """The profile as a .json file; with sessions, a .zip file that also holds
+    the copy of the browsers' sessions (all tabs with their history: private)."""
     p = need(name)
     if os.path.isdir(dest):
-        dest = os.path.join(dest, slug(name) + ".json")
-    p.pop("browser_sessions", None)       # files on this computer only
+        dest = os.path.join(dest, slug(name) + (".zip" if sessions else ".json"))
+    if sessions and p.get("browser_sessions"):
+        from .browser_copy import pack
+        pack(p, dest)
+        return dest
+    p.pop("browser_sessions", None)       # in the .json: the pages only
     write_json(dest, p)
     return dest
 
 
 def import_file(src, overwrite=False):
-    p = read(src)
+    import zipfile
+    from . import browser_copy
+    with_sessions = zipfile.is_zipfile(src)
+    if with_sessions:
+        with zipfile.ZipFile(src) as z:
+            p = json.loads(z.read("profile.json"))
+    else:
+        p = read(src)
     if find(p["name"]) and not overwrite:
         raise ValueError("a profile %r already exists (import with --overwrite to replace it)" % p["name"])
-    p.pop("browser_sessions", None)
+    if with_sessions:
+        p = migrate(browser_copy.unpack(src))
+    else:
+        p.pop("browser_sessions", None)
     write_json(path_for(p["name"]), p)
     sync_menu()
+    browser_copy.clean_all()              # the copy of a profile written over
     return p
 
 

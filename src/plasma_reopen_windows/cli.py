@@ -88,8 +88,11 @@ PROFILE_USAGE = """usage: plasma-reopen-windows profile COMMAND
   rename OLD NEW           (quote names with spaces)
   delete NAME
   clean                    delete automatic profiles made by older versions
-  export NAME [FILE]       copy to a file (default: current folder)
-  import FILE [--overwrite]"""
+  export NAME [FILE] [--with-sessions]
+                           copy to a file (default: current folder); with the
+                           browsers' sessions (all tabs with their history,
+                           private) as a .zip
+  import FILE [--overwrite]   a .json or such a .zip"""
 
 
 def do_autosave(args):
@@ -257,7 +260,10 @@ def do_profile(args):
             profiles.delete(name)
             print("deleted %s" % name)
         elif sub == "export" and rest:
-            print("exported to %s" % profiles.export(rest[0], rest[1] if len(rest) > 1 else os.getcwd()))
+            sessions = "--with-sessions" in rest
+            rest = [r for r in rest if r != "--with-sessions"]
+            print("exported to %s" % profiles.export(rest[0], rest[1] if len(rest) > 1 else os.getcwd(),
+                                                     sessions=sessions))
         elif sub == "import" and rest:
             p = profiles.import_file(rest[0], overwrite="--overwrite" in rest)
             print("imported %s" % p["name"])

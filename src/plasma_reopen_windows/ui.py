@@ -1114,14 +1114,30 @@ class Profiles(Page):
 
     def export(self):
         p = self.need()
-        if p:
-            path, _ = QFileDialog.getSaveFileName(self, "Export profile", profiles.slug(p["name"]) + ".json",
-                                                  "Profiles (*.json)")
-            if path:
-                profiles.export(p["name"], path)
+        if not p:
+            return
+        sessions = False
+        if p.get("browser_sessions"):
+            box = QMessageBox(QMessageBox.Question, "Export profile",
+                              "Also export the browsers' sessions?\n\nWith them, every tab comes back with its "
+                              "Back/Forward history. They hold your browsing history: keep the file private.",
+                              QMessageBox.Cancel, self)
+            only = box.addButton("Profile only", QMessageBox.AcceptRole)
+            full = box.addButton("With browser sessions", QMessageBox.AcceptRole)
+            box.exec()
+            if box.clickedButton() not in (only, full):
+                return
+            sessions = box.clickedButton() is full
+        ext = ".zip" if sessions else ".json"
+        path, _ = QFileDialog.getSaveFileName(self, "Export profile", profiles.slug(p["name"]) + ext,
+                                              "Profile with browser sessions (*.zip)" if sessions
+                                              else "Profiles (*.json)")
+        if path:
+            profiles.export(p["name"], path, sessions=sessions)
+            self.app.status("Exported to %s" % path)
 
     def import_(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Import profile", "", "Profiles (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, "Import profile", "", "Profiles (*.json *.zip)")
         if not path:
             return
         try:

@@ -160,5 +160,79 @@ class TestProfiles(unittest.TestCase):
         self.assertEqual([r["dir"] for r in bc.records_in(undo)], ["s1"])
 
 
+class TestArchive(unittest.TestCase):
+    """Export with the browsers' sessions: one zip, back on this or another computer."""
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        from plasma_reopen_windows import profiles
+        self.pr = profiles
+        self.chrome = os.path.join(self.root, "chrome")
+        self.ffbase = os.path.join(self.root, "ff")
+        for x in (mock.patch.object(bc, "COPIES", os.path.join(self.root, "copies")),
+                  mock.patch.dict(bc.CHROME_DIRS, {"google-chrome": self.chrome}),
+                  mock.patch.object(bc, "FIREFOX_DIRS", (self.ffbase,)),
+                  mock.patch.object(bc, "log"),
+                  mock.patch.object(profiles, "PROFILES_DIR", os.path.join(self.root, "profiles")),
+                  mock.patch.object(profiles, "sync_menu"), mock.patch.object(profiles, "log")):
+            x.start()
+            self.addCleanup(x.stop)
+        write(os.path.join(self.chrome, "Default", "Sessions", "Session_5"), b"windows")
+        self.ff = os.path.join(self.ffbase, "old.default")
+        os.makedirs(self.ff)
+        bc.write_mozlz4(os.path.join(self.ff, "sessionstore.jsonlz4"), {"windows": [1, 2]})
+        p = {"name": "Work", "apps": [{"app": "google-chrome", "launch": {}},
+                                      {"app": "org.mozilla.firefox", "launch": {"firefox_profiles": [self.ff]}}],
+             "windows": [], "screens": []}
+        p["browser_sessions"] = bc.take(p, "s1")
+        profiles.write_json(profiles.path_for("Work"), p)
+
+    def test_same_computer(self):
+        dest = self.pr.export("Work", os.path.join(self.root, "w.zip"), sessions=True)
+        self.pr.delete("Work")
+        p = self.pr.import_file(dest)
+        rec = p["browser_sessions"]
+        self.assertEqual(rec["apps"]["google-chrome"][0]["to"],
+                         os.path.join(self.chrome, "Default", "Sessions", "Session_5"))
+        with open(os.path.join(bc.COPIES, rec["dir"], rec["apps"]["google-chrome"][0]["copy"]), "rb") as f:
+            self.assertEqual(f.read(), b"windows")
+        self.assertTrue(bc.put_back(rec, {"google-chrome"}))
+
+    def test_other_computer(self):
+        dest = self.pr.export("Work", os.path.join(self.root, "w.zip"), sessions=True)
+        self.pr.delete("Work")
+        # the other computer: Chrome elsewhere, a Firefox profile with another name
+        import shutil
+        shutil.rmtree(self.chrome)
+        new_chrome = os.path.join(self.root, "chrome2")
+        os.makedirs(os.path.join(new_chrome, "Default", "Sessions"))
+        os.rename(self.ff, os.path.join(self.ffbase, "new.default-release"))
+        with open(os.path.join(self.ffbase, "profiles.ini"), "w") as f:
+            f.write("[Profile0]\nPath=other\nDefault=1\n[Install1]\nDefault=new.default-release\n")
+        with mock.patch.dict(bc.CHROME_DIRS, {"google-chrome": new_chrome}):
+            p = self.pr.import_file(dest)
+        rec = p["browser_sessions"]["apps"]
+        self.assertEqual(rec["google-chrome"][0]["to"], os.path.join(new_chrome, "Default", "Sessions", "Session_5"))
+        new_ff = os.path.join(self.ffbase, "new.default-release")
+        self.assertEqual(rec["org.mozilla.firefox"][0]["to"], os.path.join(new_ff, "sessionstore.jsonlz4"))
+        self.assertEqual(p["apps"][1]["launch"]["firefox_profiles"], [new_ff])
+
+    def test_plain_export_has_no_sessions(self):
+        dest = self.pr.export("Work", os.path.join(self.root, "w.json"))
+        self.assertNotIn("browser_sessions", self.pr.read(dest))
+
+    def test_nothing_outside_the_copy_folder(self):
+        import json, zipfile
+        bad = os.path.join(self.root, "bad.zip")
+        p = {"name": "Bad", "apps": [], "windows": [], "screens": [],
+             "browser_sessions": {"dir": "x", "apps": {"google-chrome": [
+                 {"copy": "../../evil", "to": os.path.join(self.chrome, "Default", "Sessions", "S")}]}}}
+        with zipfile.ZipFile(bad, "w") as z:
+            z.writestr("profile.json", json.dumps(p))
+            z.writestr("sessions/../../evil", b"x")
+        q = self.pr.import_file(bad)
+        self.assertNotIn("browser_sessions", q)
+        self.assertFalse(os.path.exists(os.path.join(bc.COPIES, "..", "evil")))
+
+
 if __name__ == "__main__":
     unittest.main()
