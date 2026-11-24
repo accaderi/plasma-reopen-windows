@@ -223,8 +223,9 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
     media = Media(kw.bus, list(media_items))
     # videos that start by themselves but were not saved: paused (watched for a while,
     # a background tab can start late)
+    watch = int(CFG.get("video_watch"))
     unknown = Unknown(kw.bus, [m["title"] for m in media_items]) \
-        if pause_unknown and CFG.get("pause_unknown_videos") == "yes" else None
+        if pause_unknown and CFG.get("pause_unknown_videos") == "yes" and watch > 0 else None
     # Videos start playing as soon as their tab loads, before they can be
     # paused again (saved ones put back, unknown ones paused): keep the sound
     # off until then (at most 30 s).
@@ -236,8 +237,8 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
     try:
         relaunch(launches, kw)
         unmute_at = time.time() + 30      # counted from when all apps are started
-        watch_until = time.time() + 25 if unknown else 0
-        quiet_until = time.time() + 12 if unknown and launches else 0   # unknown videos start in a few s
+        watch_until = time.time() + watch if unknown else 0
+        quiet_until = time.time() + min(watch, 12) if unknown and launches else 0   # they start within seconds
         placer = Placer(kw, {"windows": windows}, set(ignore_ids), move=move, strict_ids=strict_ids, fixed=fixed)
         end = time.time() + (timeout or int(CFG.get("restore_timeout")))
         while time.time() < end:

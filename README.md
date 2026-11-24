@@ -273,7 +273,7 @@ plasma-reopen-windows profile list
   each tell the desktop about one video only, the one started last (Firefox:
   only one that makes sound), so that is the one saved. Other videos that start
   by themselves after a restore or profile load are paused instead of playing
-  out loud (setting `pause_unknown_videos`); if several start at the same
+  out loud (settings `pause_unknown_videos`, `video_watch`); if several start at the same
   moment (several windows with a video in front), only one of them can be
   paused, as the browser shows just one.
 - If an app started by a profile brings back fewer windows than it had (for
@@ -307,6 +307,7 @@ plasma-reopen-windows config set on_login ask
 | `place_windows` | auto | Put windows back in place. Screen, position, size, desktop, minimized/maximized. auto = when the KWin script "Remember Window Positions" is on, leave the apps it handles to it and place the others (its blacklist, for example System Settings) here, so the two never move the same window. |
 | `restore_stacking` | yes | Restore the window order. Put windows back in the same order on top of each other, on every screen. |
 | `pause_unknown_videos` | yes | Pause videos that were not saved. A browser tells the desktop about one video only, so only that one comes back at its place. Other videos that start by themselves after a restore or profile load are paused instead of playing out loud. What was playing before is left alone. |
+| `video_watch` | 10 | Seconds to watch for videos that start by themselves. After a load starts apps or opens windows, videos that were not saved and start by themselves are paused for this long (see the setting above); the sound stays off meanwhile (at most 12 s). 0 = do not watch. |
 | `restore_timeout` | 120 | Seconds to wait for windows after login. Windows that appear later are not placed. |
 | `max_age_days` | 7 | Oldest session to restore (days). A saved session older than this is ignored at login. |
 | `on_login` | last | What comes back at login. last = the session saved by Save & Shut Down / Restart (if there is one); ask = a notification with the choices (last session, a profile, nothing); profile:NAME = always load that profile; nothing = start empty. |

@@ -62,6 +62,12 @@ SETTINGS = [
          help="A browser tells the desktop about one video only, so only that one comes back at "
               "its place. Other videos that start by themselves after a restore or profile load "
               "are paused instead of playing out loud. What was playing before is left alone."),
+    dict(key="video_watch", default="10", type="int", min=0, max=120, section="Restoring",
+         label="Seconds to watch for videos that start by themselves",
+         help="After a load starts apps or opens windows, videos that were not saved and "
+              "start by themselves are paused for this long (see the setting above); the "
+              "sound stays off meanwhile (at most 12 s). 0 = do not watch.",
+         when="a video in a slow-loading window still starts playing after the load."),
     dict(key="restore_timeout", default="120", type="int", min=10, max=900, section="Restoring",
          label="Seconds to wait for windows after login",
          help="Windows that appear later are not placed.",
