@@ -13,10 +13,10 @@ import shutil
 import sys
 import time
 import zlib
-from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QProcess, QProcessEnvironment, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtGui import QBrush, QColor, QPalette, QCursor, QFont, QIcon, QKeySequence, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import (QAbstractButton, QProgressBar, QToolButton, QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QFrame,
+from PySide6.QtWidgets import (QStyledItemDelegate, QStyleOptionViewItem, QAbstractButton, QProgressBar, QToolButton, QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QFrame,
                                QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QInputDialog, QKeySequenceEdit, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
@@ -137,6 +137,42 @@ class CheckHeader(QHeaderView):
     def mousePressEvent(self, event):
         if self.box_enabled and self.logicalIndexAt(event.position().toPoint()) == 0:
             self.clicked_box.emit()
+
+
+class PickerDelegate(QStyledItemDelegate):
+    """The profile list: a visible line as separator (Breeze draws combo-box
+    separators nearly invisible) and the autosaves indented under it."""
+    INDENT = 18
+
+    @staticmethod
+    def is_separator(index):
+        return index.data(Qt.AccessibleDescriptionRole) == "separator"
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        return QSize(size.width(), 9) if self.is_separator(index) else size
+
+    def paint(self, painter, option, index):
+        if self.is_separator(index):
+            y = option.rect.center().y()
+            painter.save()
+            painter.setPen(QPen(option.palette.color(QPalette.Mid), 1))
+            painter.drawLine(option.rect.left() + 6, y, option.rect.right() - 6, y)
+            painter.restore()
+            return
+        if not str(index.data(Qt.UserRole) or "").startswith("@autosave:"):
+            super().paint(painter, option, index)
+            return
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        text, opt.text = opt.text, ""
+        style = opt.widget.style() if opt.widget else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)    # background, full width
+        painter.save()
+        selected = bool(opt.state & QStyle.State_Selected)
+        painter.setPen(opt.palette.color(QPalette.HighlightedText if selected else QPalette.Text))
+        painter.drawText(opt.rect.adjusted(self.INDENT + 4, 0, -4, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
+        painter.restore()
 
 
 def button(label, slot, tip):
@@ -471,6 +507,7 @@ class Profiles(Page):
         top.addWidget(QLabel("Profile:"))
         self.picker = QComboBox()
         self.picker.setMinimumWidth(260)
+        self.picker.setItemDelegate(PickerDelegate(self.picker))
         self.picker.currentIndexChanged.connect(self.picked)
         self.shown = -1                      # picker index of the profile shown
         top.addWidget(self.picker, 1)
@@ -590,12 +627,8 @@ class Profiles(Page):
             self.picker.blockSignals(True)
             self.picker.clear()
             for label, data in entries:
-                if data.startswith("@autosave:") and data.endswith(":0"):
-                    # a heading (Breeze draws combo-box separators nearly invisible)
-                    self.picker.addItem("Autosaves")
-                    head = self.picker.model().item(self.picker.count() - 1)
-                    head.setEnabled(False)
-                    head.setSelectable(False)
+                if data.startswith("@autosave:") and data.endswith(":0") and found:
+                    self.picker.insertSeparator(self.picker.count())     # drawn by PickerDelegate
                 self.picker.addItem(label, data)
                 if data == keep:
                     self.picker.setCurrentIndex(self.picker.count() - 1)
