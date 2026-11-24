@@ -12,6 +12,7 @@ password (polkit: org.freedesktop.packagekit.system-update and
 trigger-offline-update are "yes" for active sessions on Fedora).
 """
 
+import glob
 import os
 import re
 import signal
@@ -24,6 +25,8 @@ from .config import log, notify, progress
 from .session import do_restore, do_save
 
 PK = "org.freedesktop.PackageKit"
+# where PackageKit (dnf5 backend) puts the packages it downloads (measured)
+PK_PACKAGES = "/var/cache/PackageKit/*/metadata/*/packages/*.rpm"
 # pkcon exit code when there is nothing to do ("no updates available")
 NOTHING_TO_DO = 5
 
@@ -89,9 +92,20 @@ def percentage():
     return None
 
 
-def run_pkcon(args, note, step):
-    """Run pkcon, showing its progress; (exit code, last lines). Stopped from
-    outside: the PackageKit transaction is cancelled too (SIGINT = pkcon's cancel)."""
+def downloaded():
+    """Package files in PackageKit's cache."""
+    return set(glob.glob(PK_PACKAGES))
+
+
+def run_pkcon(args, note, step, total=0):
+    """Run pkcon, showing its progress; (exit code, last lines). The dnf5
+    backend reports no percentage (always 101) and pkcon lists the packages
+    only at the end (both measured): then the progress is the package files
+    that arrive in the cache, out of total minus those there already.
+    Stopped from outside: the PackageKit transaction is cancelled too
+    (SIGINT = pkcon's cancel)."""
+    before = downloaded() if total else set()
+    todo = max(1, total - len(before))
     proc = subprocess.Popen(pkcon(*args), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, env=_env())
     tail = []
@@ -105,6 +119,8 @@ def run_pkcon(args, note, step):
     try:
         while proc.poll() is None:
             pct = percentage()
+            if pct is None and total:
+                pct = min(99, len(downloaded() - before) * 100 // todo)
             if pct is not None:
                 note.show(step, pct)
             time.sleep(1)
@@ -120,11 +136,23 @@ def run_pkcon(args, note, step):
 
 
 def prepared():
-    """Package ids (name;version;arch;repo) downloaded and ready for an offline update."""
+    """Packages downloaded and ready for an offline update: pkcon lists them
+    under "Prepared updates:", one name_version.arch per line (measured)."""
     r = subprocess.run(pkcon("offline-get-prepared"), capture_output=True, text=True, env=_env(), check=False)
     if r.returncode != 0:
         return []
-    return [w for l in r.stdout.splitlines() for w in l.split() if w.count(";") == 3]
+    lines = r.stdout.splitlines()
+    if "Prepared updates:" in lines:
+        lines = lines[lines.index("Prepared updates:") + 1:]
+    return [l.strip() for l in lines if l.strip() and " " not in l.strip()]
+
+
+def count_updates():
+    """How many updates there are (for the progress), 0 if unknown. pkcon
+    lists each as "<kind>   name-version.arch (repo)"."""
+    r = subprocess.run(pkcon("get-updates"), capture_output=True, text=True, env=_env(), check=False)
+    return sum(1 for l in r.stdout.splitlines()
+               if re.match(r"\S.*\s\S+\s\(\S+\)$", l) and not l.startswith(("Status", "Transaction", "Results")))
 
 
 def download(note):
@@ -136,8 +164,10 @@ def download(note):
     if code != 0:
         log("update: refresh failed (%d): %s" % (code, " | ".join(tail)))
         # not fatal: the lists may just be fresh enough
-    log("update: downloading")
-    code, tail = run_pkcon(["update", "--only-download"], note, "Downloading updates")
+    total = count_updates()
+    log("update: downloading %d updates" % total)
+    code, tail = run_pkcon(["update", "--only-download"], note, "Downloading %d updates" % total if total
+                           else "Downloading updates", total)
     if code == NOTHING_TO_DO:
         return 0
     if code != 0:
