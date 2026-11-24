@@ -27,7 +27,7 @@ from .apps import app_kind, app_name, find_desktop, ignored, launch_spec
 from .config import CFG, STATE_DIR, log, notify
 UNDO = os.path.join(STATE_DIR, "undo.json")   # what was open before the last load (not a profile)
 from .kwin import KWin
-from .media import mpris_players, similar
+from .media import mpris_players, same_video, similar
 from .reopen import can_reopen, command
 from .session import bring_back, busy_message, close_apps, snapshot, strip_caption, write_json
 
@@ -332,13 +332,6 @@ def summary(closed=(), started=(), opened=0, placed=0, added=()):
 TITLES = {"unite": "Unite", "reload": "Reload", "arrange": "Arrange", "undo": "Undo"}
 
 
-def same_video(a, b):
-    """Titles of the same video (a browser integration may report it without
-    the site's name at the end)."""
-    a, b = a.strip().lower(), b.strip().lower()
-    return bool(a and b) and (similar(a, b) >= 0.85 or a.startswith(b) or b.startswith(a))
-
-
 def one_per_video(items):
     """Each saved video once: entries that know their app win over copies
     without one (the Plasma browser integration reports a video a second time)."""
@@ -414,7 +407,8 @@ def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None
     busy = launches or opened
     placer = bring_back(kw, launches + opened, windows, existing, ids, media_items=media,
                sound=p.get("sound") if mode != "arrange" else None,
-               timeout=None if busy else 8, settle=20 if busy else 3, fixed=fixed)
+               timeout=None if busy else 8, settle=20 if busy else 3, fixed=fixed,
+               pause_unknown=bool(busy))      # only when something is started or opened
     # An app started now may bring back fewer windows than it had (Chrome after
     # a hard power-off): open the missing ones from what is saved for them.
     left = missing_after_start(placer.todo if placer else {}, started, opening)
@@ -425,7 +419,7 @@ def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None
         log("%d windows did not come back with their app: opening them" % len(again))
         now = {w["id"] for w in kw.windows()["windows"]}
         playing = [pl["title"] for pl in mpris_players(kw.bus) if pl["title"]]
-        later = bring_back(kw, again, left, now, {w["app"] for w in left}, timeout=60, settle=8,
+        later = bring_back(kw, again, left, now, {w["app"] for w in left}, timeout=60, settle=8, pause_unknown=True,
                            media_items=videos_for(p.get("media", []), set(), left, playing))
         opened += again
         if later and placer:

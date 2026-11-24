@@ -192,3 +192,31 @@ class TestMissingAfterStart(unittest.TestCase):
         nothing = {"app": "google-chrome", "caption": "D"}               # nothing saved to open it with
         todo = {"google-chrome": [started_win, reopened, nothing], "org.kde.dolphin": [running_app]}
         self.assertEqual(profiles.missing_after_start(todo, {"google-chrome"}, [reopened]), [started_win])
+
+
+class TestUnknownVideos(unittest.TestCase):
+    def test_pauses_only_new_unsaved_videos(self):
+        from plasma_reopen_windows import media
+        before = [{"bus": "music", "title": "Song", "status": "Playing"}]
+        after = before + [
+            {"bus": "chrome", "title": "Saved video - YouTube", "status": "Playing"},     # Media handles it
+            {"bus": "chrome2", "title": "Other video - YouTube", "status": "Playing"},    # unknown: pause
+            {"bus": "ff", "title": "Paused one", "status": "Paused"}]
+        bus = mock.Mock()
+        with mock.patch.object(media, "mpris_players", side_effect=[before, after]):
+            u = media.Unknown(bus, ["Saved video"])
+            u.step()
+        paused = [c.args[0] for c in bus.call_sync.call_args_list if c.args[3] == "Pause"]
+        self.assertEqual(paused, ["chrome2"])          # not the music that played before, not the saved video
+        self.assertEqual(u.paused, ["Other video - YouTube"])
+
+
+class TestSameVideo(unittest.TestCase):
+    def test_strict(self):
+        from plasma_reopen_windows.media import same_video
+        self.assertTrue(same_video("GTA 6 - Wanted Level - YouTube", "GTA 6 - Wanted Level"))
+        self.assertTrue(same_video("Film", "film"))
+        self.assertFalse(same_video("Video A", "Video C"))
+        self.assertFalse(same_video("Episode 1", "Episode 10"))
+        self.assertFalse(same_video("Episode 1", "Episode 2 - YouTube"))
+        self.assertFalse(same_video("", "x"))

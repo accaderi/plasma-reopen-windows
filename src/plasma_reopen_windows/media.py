@@ -1,6 +1,7 @@
 """plasma-reopen-windows: media players over MPRIS (videos, music)."""
 
 import difflib
+import re
 from gi.repository import GLib
 from .config import log
 
@@ -14,7 +15,8 @@ def similar(a, b):
 
 
 def mpris_players(bus):
-    """Media players on D-Bus (Chrome reports each tab playing a video)."""
+    """Media players on D-Bus. A browser reports only one video, the one
+    started last (measured with Chrome and Firefox; Firefox only audible ones)."""
     names = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
                           "ListNames", None, GLib.VariantType("(as)"), 0, 5000).unpack()[0]
     out = []
@@ -41,6 +43,48 @@ def mpris_players(bus):
     return out
 
 
+def same_video(a, b):
+    """Titles of the same video: equal, or one is the other plus the site's name
+    after a separator ("X" and "X - YouTube": a browser integration leaves the
+    site out). Not a similarity score: "Episode 1" and "Episode 2" are different."""
+    a, b = (a or "").strip().lower(), (b or "").strip().lower()
+    if not a or not b:
+        return False
+    short, long = sorted((a, b), key=len)
+    return long == short or (long.startswith(short) and re.match(r"\s+[-—|·:]\s", long[len(short):]) is not None)
+
+
+class Unknown:
+    """Pauses videos that start playing during a restore or profile load but
+    were not saved: their position is not known (a browser reports only one
+    video), and they should not suddenly play out loud. What was playing
+    before the load is left alone."""
+
+    def __init__(self, bus, saved_titles):
+        self.bus, self.saved = bus, list(saved_titles)
+        self.before = {(p["bus"], p["title"]) for p in mpris_players(bus) if p["status"] == "Playing"}
+        self.paused = []
+
+    def step(self):
+        for p in mpris_players(self.bus):
+            if p["status"] != "Playing" or not p["title"] or (p["bus"], p["title"]) in self.before:
+                continue
+            if any(same_video(p["title"], t) for t in self.saved):
+                continue                       # a saved video: Media puts it back
+            try:
+                self.bus.call_sync(p["bus"], "/org/mpris/MediaPlayer2", MPRIS + ".Player", "Pause",
+                                   None, None, 0, 3000)
+            except GLib.Error:
+                continue
+            if p["title"] not in self.paused:
+                self.paused.append(p["title"])
+
+    def report(self):
+        if self.paused:
+            log("paused %d videos that were not saved (position unknown): %s" % (
+                len(self.paused), "; ".join(t[:50] for t in self.paused)))
+
+
 class Media:
     """Puts videos back at their saved position, paused or playing."""
 
@@ -56,7 +100,7 @@ class Media:
             return
         players = mpris_players(self.bus)
         for m in list(self.todo):
-            match = [p for p in players if similar(p["title"], m["title"]) >= 0.85]
+            match = [p for p in players if same_video(p["title"], m["title"])]
             if not match:
                 continue        # tab not loaded yet, or an ad is playing first
             p = match[0]

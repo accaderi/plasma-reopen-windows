@@ -12,7 +12,7 @@ from .apps import CLOSE_TIMEOUT, ORDER, app_kind, app_name, find_desktop, ignore
 from .audio import default_sink, mute_outputs, set_sound_output, unmute_outputs, wait_for_quiet
 from .config import CFG, STATE, STATE_DIR, log, notify
 from .kwin import JS_PLACE, JS_RAISE, KWin
-from .media import Media, mpris_players, similar
+from .media import Media, Unknown, mpris_players, similar
 from .screens import annotate, target_geometry
 
 
@@ -210,16 +210,20 @@ def do_restore(state=None):
     kw = KWin()
     before = {w["id"] for w in kw.windows()["windows"]}
     bring_back(kw, state["launch"], state["windows"], before, placement_for(state),
-               media_items=state.get("media", []), sound=state.get("sound"))
+               media_items=state.get("media", []), sound=state.get("sound"), pause_unknown=True)
     notify("Session restored", "%d apps started again" % len(state["launch"]))
 
 
 def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=None,
-               timeout=None, settle=20, strict_ids=(), fixed=None):
+               timeout=None, settle=20, strict_ids=(), fixed=None, pause_unknown=False):
     """Start apps, then put windows in place (matched by app and title), seek
     and pause videos, select the sound output, and restore the stacking order.
     ignore_ids: windows that must not be matched (already open before)."""
     media = Media(kw.bus, list(media_items))
+    # videos that start by themselves but were not saved: paused (watched for a while,
+    # a background tab can start late)
+    unknown = Unknown(kw.bus, [m["title"] for m in media_items]) \
+        if pause_unknown and CFG.get("pause_unknown_videos") == "yes" else None
     # Videos start playing as soon as their tab loads, before they can be
     # paused again: keep the sound off until then (at most 30 s).
     muting = media.pending()
@@ -230,6 +234,7 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
     try:
         relaunch(launches, kw)
         unmute_at = time.time() + 30      # counted from when all apps are started
+        watch_until = time.time() + 25 if unknown else 0
         placer = Placer(kw, {"windows": windows}, set(ignore_ids), move=move, strict_ids=strict_ids, fixed=fixed)
         end = time.time() + (timeout or int(CFG.get("restore_timeout")))
         while time.time() < end:
@@ -238,12 +243,15 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
             if muting:
                 muted += mute_outputs(quiet=True)     # monitors that woke up late
             media.step()
+            if unknown:
+                unknown.step()
             if muting and (not media.pending() or time.time() > unmute_at):
                 unmute_outputs(muted)
                 muted, muting = [], False
             placer.step()
             # done, or no further window for a while (an app may open fewer windows)
-            if not sound and not media.todo and (not placer.todo or time.time() - placer.last_match > settle):
+            if not sound and not media.todo and time.time() > watch_until and \
+                    (not placer.todo or time.time() - placer.last_match > settle):
                 break
             time.sleep(1.5 if launches else 0.4)
         if sound:
@@ -251,6 +259,8 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
     finally:
         unmute_outputs(muted)
     media.report()
+    if unknown:
+        unknown.report()
     if placer:
         placer.report()
         if CFG.get("restore_stacking") == "yes":

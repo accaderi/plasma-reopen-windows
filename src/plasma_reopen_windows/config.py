@@ -56,6 +56,11 @@ SETTINGS = [
     dict(key="restore_stacking", default="yes", type="bool", section="Restoring",
          label="Restore the window order",
          help="Put windows back in the same order on top of each other, on every screen."),
+    dict(key="pause_unknown_videos", default="yes", type="bool", section="Restoring",
+         label="Pause videos that were not saved",
+         help="A browser tells the desktop about one video only, so only that one comes back at "
+              "its place. Other videos that start by themselves after a restore or profile load "
+              "are paused instead of playing out loud. What was playing before is left alone."),
     dict(key="restore_timeout", default="120", type="int", min=10, max=900, section="Restoring",
          label="Seconds to wait for windows after login",
          help="Windows that appear later are not placed.",
