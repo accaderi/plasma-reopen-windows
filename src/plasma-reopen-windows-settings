@@ -1,0 +1,18 @@
+#!/usr/bin/python3
+"""Reopen Windows: the settings app for plasma-reopen-windows (needs PySide6)."""
+import os
+import sys
+
+here = os.path.dirname(os.path.realpath(__file__))
+for path in (here, os.path.expanduser("~/.local/lib/plasma-reopen-windows")):
+    if os.path.isdir(os.path.join(path, "plasma_reopen_windows")):
+        sys.path.insert(0, path)
+        break
+
+try:
+    from plasma_reopen_windows.ui import main  # noqa: E402
+except ImportError as e:
+    sys.exit("The settings app needs PySide6 (Fedora: sudo dnf install python3-pyside6): %s" % e)
+
+if __name__ == "__main__":
+    main()

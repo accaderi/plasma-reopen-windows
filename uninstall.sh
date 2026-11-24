@@ -1,5 +1,8 @@
 #!/bin/bash
 # Removes plasma-reopen-windows for the current user.  Run:  bash uninstall.sh
+rm -rfv "$HOME/.local/lib/plasma-reopen-windows"
+rm -fv "$HOME/.local/bin/plasma-reopen-windows-settings" "$HOME/.local/share/applications/plasma-reopen-windows-settings.desktop" \
+       "$HOME/.local/share/applications"/plasma-reopen-windows-profile-*.desktop
 rm -fv "$HOME/.local/bin/plasma-reopen-windows" \
        "$HOME/.local/share/applications/plasma-reopen-windows-shutdown.desktop" \
        "$HOME/.local/share/applications/plasma-reopen-windows-reboot.desktop" \

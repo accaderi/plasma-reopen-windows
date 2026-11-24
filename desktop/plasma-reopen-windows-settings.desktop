@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Reopen Windows
+GenericName=Session and profile settings
+Comment=Settings, profiles and placement for Save & Shut Down / Save & Restart
+Exec=@SETTINGS@
+Icon=view-restore
+Categories=Settings;System;
+Keywords=session;restore;profile;windows;layout;shutdown;restart;
