@@ -311,10 +311,17 @@ would come back).
 - At login, after a session that did not end with Save & Shut Down, one
   question offers them (setting `autosave_ask`; once per snapshot).
 - An autosave holds the same as a profile, videos included (one per
-  browser). Not in it: unsaved work, terminal output, and each tab's
-  back/forward history (browser windows the browser does not restore itself
-  are opened again from their page addresses); hibernation keeps all of it,
-  Save & Shut Down the browser's own history.
+  browser), and in addition a **copy of each browser's own session file**
+  (Chrome and Chromium-based browsers: `Sessions/`, Firefox:
+  `recovery.jsonlz4`), taken while the browser runs. When a restore starts a
+  browser, the copy is put back first, so the browser brings back every
+  window and tab itself, with each tab's back/forward history, as after Save
+  & Restart. The files it replaces are moved to
+  `~/.local/state/plasma-reopen-windows/browser-sessions/replaced/`, never
+  deleted; a browser that is already running is left alone (its missing
+  windows open from their page addresses).
+- Not in an autosave: unsaved work and terminal output (only hibernation
+  keeps those).
 
 ```bash
 plasma-reopen-windows autosave now            # save now

@@ -687,6 +687,7 @@ class Profiles(Page):
         now = time.strftime("%Y-%m-%dT%H:%M:%S")
         p.update(name=name, auto=False, created=now, updated=now)
         p.pop("saved", None)
+        p.pop("browser_sessions", None)      # the copies belong to the autosave and go with it
         profiles.write_json(profiles.path_for(name), p)
         profiles.sync_menu()
         self.app.status("Kept as profile \"%s\"" % name)

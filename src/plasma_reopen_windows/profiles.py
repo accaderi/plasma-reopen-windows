@@ -391,6 +391,13 @@ def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None
     if mode != "arrange":
         launches = [dict(a["launch"], delay=a.get("start_delay", 0)) for a in apps if a["app"] not in running]
         started = {l["app"] for l in launches}
+        # an autosave: browsers about to start get their own session of then back
+        if p.get("browser_sessions"):
+            from .browser_copy import put_back
+            back = put_back(p["browser_sessions"], started)
+            for l in launches:
+                if l["app"] in back:
+                    l["restore_session"] = True
     desktops = {a["app"]: a["launch"].get("desktop") for a in apps}
     opened, opening = [], []
     for i in reopen:

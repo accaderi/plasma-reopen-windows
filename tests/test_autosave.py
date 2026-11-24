@@ -48,6 +48,23 @@ class TestAutosave(unittest.TestCase):
         self.assertEqual(autosave.read(0)["windows"][0]["x"], 50)
         self.assertEqual(autosave.read(1)["windows"][0]["x"], 0)       # the one before is kept
 
+    def test_browser_sessions_go_with_the_newest(self):
+        """Each snapshot gets its copy of the browser sessions; an unchanged one
+        gets the fresh copy (a tab's history changes without its title); copies
+        no autosave refers to are deleted."""
+        from plasma_reopen_windows import browser_copy
+        recs = iter([{"dir": "1", "apps": {}}, {"dir": "2", "apps": {}}, {"dir": "3", "apps": {}}])
+        with mock.patch.object(browser_copy, "take", side_effect=lambda p: next(recs)), \
+                mock.patch.object(browser_copy, "clean") as clean:
+            self.take([win("A")], manual=True)
+            self.take([win("A", x=50)], manual=True)
+            self.assertEqual(autosave.read(0)["browser_sessions"]["dir"], "2")
+            self.assertEqual(autosave.read(1)["browser_sessions"]["dir"], "1")
+            os.utime(autosave.CHECKED, (time.time() - 3600, time.time() - 3600))
+            self.assertIsNone(self.take([win("A", x=50)]))                 # timer, due, unchanged
+            self.assertEqual(autosave.read(0)["browser_sessions"]["dir"], "3")
+            self.assertEqual(sorted(r["dir"] for r in clean.call_args[0][0]), ["1", "3"])
+
     def test_empty_desktop_is_not_saved(self):
         self.take([win("A")], manual=True)
         self.assertIsNone(self.take([], manual=True))

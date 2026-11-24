@@ -12,6 +12,7 @@ import time
 import urllib.parse
 import xml.etree.ElementTree as ET
 from gi.repository import Gio, GLib
+from .browsers import CHROME_DIRS
 from .config import CFG, STATE_DIR, log, progress
 from .kwin import JS_ACTIVATE, JS_CLOSE
 
@@ -364,6 +365,15 @@ def relaunch(launches, kw=None):
                 except OSError as e:
                     log("firefox: %s" % e)
             files = [real_path(f) for f in spec.get("files", [])]
+            if spec.get("restore_session") and spec["app"] in CHROME_DIRS:
+                # Chrome-style browsers: restore the session put back for it,
+                # whatever "On startup" says (Firefox: resume_session_once above)
+                direct = command_with_file(spec["desktop"], "--restore-last-session")
+                if direct:
+                    subprocess.Popen(["kstart", "--desktopfile", spec["desktop"], "--"] + direct)
+                    log("started %s with its saved session" % spec["app"])
+                    time.sleep(1)
+                    continue
             for f in files or [None]:
                 direct = command_with_file(spec["desktop"], f) if f else None
                 if direct:

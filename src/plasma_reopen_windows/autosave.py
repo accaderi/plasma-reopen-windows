@@ -11,6 +11,10 @@ closes browsers window by window, so only their last window comes back).
   "Save now"          the same at once, also with autosave switched off
   restore             like a profile's Unite: missing apps and windows come
                       back, nothing is closed, Undo works
+  browsers            each snapshot keeps a copy of the browsers' own session
+                      files (browser_copy.py); a restore puts it back before
+                      a browser starts, so it brings back all its windows
+                      with each tab's history itself
   at login            after an end without Save & Shut Down: one question
 
 The last two snapshots are kept (autosave-1.json is the newer): a snapshot
@@ -114,6 +118,7 @@ def take(manual=False):
     from .kwin import KWin
     from .profiles import build
     from .session import snapshot
+    from . import browser_copy
     p = build("Autosave", snapshot(KWin()), auto=True)
     p["saved"] = time.time()
     os.makedirs(STATE_DIR, exist_ok=True)
@@ -123,27 +128,38 @@ def take(manual=False):
         log("autosave: no windows open, nothing saved")
         return None
     newest = read(0)
+    copies = browser_copy.take(p)
     if newest and fingerprint(newest) == fingerprint(p):
-        if manual:                          # asked for: the newest gets the current time
-            keep_time(p["saved"])
+        # same windows: the newest gets the fresh browser sessions (a tab's
+        # history can change without its title), and the current time if asked for
+        keep_time(p["saved"] if manual else None, copies)
+        browser_copy.clean([r.get("browser_sessions") for _, r in all_saved()])
         return None
+    if copies:
+        p["browser_sessions"] = copies
     keep(p)
+    browser_copy.clean([r.get("browser_sessions") for _, r in all_saved()])
     log("autosave%s: %s" % (" (Save now)" if manual else "", describe(p)))
     return p
 
 
-def keep_time(t):
+def keep_time(t, copies=None):
     p = read(0)
-    if p:
-        p["saved"] = t
+    if p and (t or copies):
+        if t:
+            p["saved"] = t
+        if copies:
+            p["browser_sessions"] = copies
         with open(SLOTS[0], "w") as f:
             json.dump(p, f, ensure_ascii=False)
 
 
 def delete():
+    from . import browser_copy
     for path in SLOTS + [OFFERED]:
         if os.path.exists(path):
             os.remove(path)
+    browser_copy.clean([])
     log("autosaves deleted")
 
 
