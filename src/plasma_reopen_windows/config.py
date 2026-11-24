@@ -299,6 +299,15 @@ def progress(step, done=None, total=None, until=None):
 
 
 def notify(title, body="", critical=False):
+    """A desktop notification - or, when the settings app started this
+    command, a line for the app, which shows it in its own window (KDE puts
+    notification pop-ups on the main screen, wherever the app is)."""
+    if os.environ.get("PRW_FROM_APP"):
+        try:
+            print(PROGRESS_PREFIX + json.dumps({"notice": title, "text": body, "critical": critical}), flush=True)
+            return
+        except (OSError, ValueError):
+            pass
     cmd = ["notify-send", "-a", "Reopen windows", "-i", "system-shutdown"]
     if critical:
         cmd += ["-u", "critical"]

@@ -1229,7 +1229,7 @@ class Main(QMainWindow):
         self.statusBar().addPermanentWidget(self.bar)
         self.bar.hide()
         self.tick = QTimer(self)
-        self.tick.setInterval(500)
+        self.tick.setInterval(100)               # smooth bar; the countdown text changes once a second
         self.tick.timeout.connect(self.show_step)
         self.nav.setCurrentRow(min(max(int(self.ui_state.get("page", 0)), 0), len(self.pages) - 1))
 
@@ -1287,18 +1287,25 @@ class Main(QMainWindow):
         env.insert("PRW_FROM_APP", "1")          # progress lines, and this window on top again when done
         proc.setProcessEnvironment(env)
         self.procs.append(proc)
-        buf, out = [""], []
+        buf, out, notices = [""], [], []
 
         def read():
             buf[0] += bytes(proc.readAllStandardOutput()).decode(errors="replace")
             *lines, buf[0] = buf[0].split("\n")
             for line in lines:
                 if line.startswith(config.PROGRESS_PREFIX):
-                    if not quiet:
-                        try:
-                            self.cur = json.loads(line[len(config.PROGRESS_PREFIX):])
-                        except ValueError:
-                            continue
+                    try:
+                        msg = json.loads(line[len(config.PROGRESS_PREFIX):])
+                    except ValueError:
+                        continue
+                    if "notice" in msg:              # instead of a desktop notification
+                        notices.append(msg)
+                    elif not quiet:
+                        if msg.get("step") != self.cur.get("step"):
+                            msg["since"] = time.time()    # for the bar of a step with a time limit
+                        else:
+                            msg["since"] = self.cur.get("since", time.time())
+                        self.cur = msg
                         self.show_step()
                 elif line.strip():
                     out.append(line.strip())
@@ -1309,6 +1316,12 @@ class Main(QMainWindow):
             if not quiet:
                 self.set_busy(False)
             text = (out[-1] if out else "Done") if code == 0 else "Failed: %s" % (out[-1] if out else code)
+            for n in notices:
+                if n.get("critical"):
+                    QMessageBox.warning(self, n["notice"], n.get("text") or n["notice"])
+            normal = [n for n in notices if not n.get("critical")]
+            if normal and code == 0:
+                text = "%s: %s" % (normal[-1]["notice"], normal[-1]["text"]) if normal[-1].get("text") else normal[-1]["notice"]
             self.statusBar().showMessage(text, 15000)
             self.procs.remove(proc)
             if done:
@@ -1347,11 +1360,19 @@ class Main(QMainWindow):
             return
         c = self.cur
         text = c.get("step") or "working"
+        # always the solid bar (Breeze draws the "busy" animation faded):
+        # a count fills it, a time limit fills it as the time passes, else it fills over and over
+        now = time.time()
         if c.get("total"):
             self.bar.setRange(0, c["total"])
             self.bar.setValue(c.get("done") or 0)
+        elif c.get("until") and c["until"] > c.get("since", now):
+            span = c["until"] - c.get("since", now)
+            self.bar.setRange(0, 1000)
+            self.bar.setValue(int(1000 * min(1, (now - c.get("since", now)) / span)))
         else:
-            self.bar.setRange(0, 0)               # moving bar: no count for this step
+            self.bar.setRange(0, 1000)
+            self.bar.setValue(int((now * 400) % 1000))
         if c.get("until"):
             left = int(c["until"] - time.time())
             if left > 0:
