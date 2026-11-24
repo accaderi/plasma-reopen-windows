@@ -77,3 +77,17 @@ class TestConfFile(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLogSize(unittest.TestCase):
+    def test_log_is_trimmed(self):
+        from unittest import mock
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "log")
+        with open(path, "w") as f:
+            f.write("old line\n" * 150000)               # ~1.3 MB
+        with mock.patch.object(config, "LOG", path), mock.patch.object(config, "STATE_DIR", d):
+            config.log("new line")
+        lines = open(path).read().splitlines()
+        self.assertEqual(len(lines), 5000)
+        self.assertTrue(lines[-1].endswith("new line"))

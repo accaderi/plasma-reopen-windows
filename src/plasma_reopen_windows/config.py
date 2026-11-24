@@ -260,6 +260,15 @@ def log(msg):
     with open(LOG, "a") as f:
         f.write(time.strftime("%F %T ") + msg + "\n")
     try:
+        if os.path.getsize(LOG) > 1048576:      # never more than about 1 MB: keep the newest part
+            with open(LOG) as f:
+                keep = f.readlines()[-5000:]
+            with open(LOG + ".new", "w") as f:
+                f.writelines(keep)
+            os.replace(LOG + ".new", LOG)
+    except OSError:
+        pass
+    try:
         print(msg, flush=True)
     except (OSError, ValueError):
         pass
