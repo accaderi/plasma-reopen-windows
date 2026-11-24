@@ -401,9 +401,8 @@ class Overview(Page):
             row.addWidget(b)
             setattr(self, "auto_" + label.split()[0].strip("…").lower(), b)
         bl.addLayout(row)
-        bl.addWidget(hint("Every %s minutes when switched on (Settings, Autosave), and with \"Save now\"; "
-                          "the last two are kept. For a hang, an empty battery, a crash or the normal Shut Down."
-                          % config.load_conf()["autosave_minutes"]))
+        self.auto_hint = hint("")
+        bl.addWidget(self.auto_hint)
         v.addWidget(box)
         v.addStretch()
 
@@ -438,6 +437,9 @@ class Overview(Page):
         lines = [("<b>Newest</b>: " if i == 0 else "Earlier: ") + autosave.describe(p) for i, p in saved]
         self.auto_info.setText(("<br>".join(lines) or "No autosave yet.") +
                                ("" if on else "<br><i>Autosave is switched off; \"Save now\" still works.</i>"))
+        self.auto_hint.setText("Every %s minutes when switched on (Settings, Autosave), and with \"Save now\"; "
+                               "the last two are kept. For a hang, an empty battery, a crash or the normal Shut "
+                               "Down." % config.load_conf()["autosave_minutes"])
         self.auto_restore.setEnabled(bool(saved))
         self.auto_delete.setEnabled(bool(saved))
         data, what = read_session()
