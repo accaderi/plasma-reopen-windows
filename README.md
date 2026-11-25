@@ -384,12 +384,16 @@ offline updates), and keeps the windows:
 
 1. The updates are downloaded while every app stays open (the settings app
    shows the progress, the app menu entry a notification). No updates, or the
-   download fails: nothing is closed.
+   download fails: nothing is closed. Nothing is closed either when a new
+   kernel is among them and `/boot` has no room for it: PackageKit would
+   cancel the whole update at the restart (see Troubleshooting).
 2. The apps close and are saved, as for Save & Restart (an app that does not
    close stops it; the downloaded updates stay for later).
 3. The update is armed for the next boot and Plasma restarts. The computer
    boots once into the update, installs it, and restarts again.
-4. At the login the windows come back.
+4. At the login the windows come back, and a notification says whether the
+   updates were installed, or why not (PackageKit installs all or nothing:
+   one failing package leaves the system as it was).
 
 No password: PackageKit lets the user at the screen download and install
 updates. Flatpaks are not updated (Discover or `flatpak update` does that
@@ -399,6 +403,7 @@ take a minute longer while the driver module is built.
 ```bash
 plasma-reopen-windows update
 pkcon offline-get-prepared      # what is downloaded and waiting
+pkcon offline-status            # how the last update at a restart went
 ```
 
 ## Hibernation
@@ -496,6 +501,7 @@ value). `plasma-reopen-windows config` shows them all.
 | Nothing came back | `plasma-reopen-windows status` and the log; the autostart entry must exist in `~/.config/autostart/` |
 | An app should not be touched | add its id to `exclude` |
 | An app you did not open (Spectacle, the settings app) starts at login | Plasma's own session restore started it (its list: `~/.local/state/plasmasessionrestorestaterc`): choose *Start with an empty session* (see Use) |
+| "Update cancelled: the new kernel needs about N MB on /boot" | `/boot` is full of old kernels (on Fedora about 200 MB each with its boot image; a 1 GB `/boot` holds three plus the rescue one). Remove the oldest kernel (`sudo dnf remove kernel*-<old version>`, never the running one, `uname -r`) and keep two from now on: add `installonly_limit=2` under `[main]` in `/etc/dnf/dnf.conf` |
 | "Update cancelled: the updates could not be downloaded" | no network, or another update is running (Discover): wait and try again; the log has pkcon's last lines |
 | Bluetooth speaker or headset silent after login, or sounds like a phone call | an app that records (OBS, DaVinci Resolve, video calls) is using the speaker's built-in microphone, which forces it into headset mode. Pick the laptop microphone as default input (speaker icon → microphone), then reconnect the speaker. To stop the automatic switch for good, see below |
 | DaVinci Resolve hangs at "Loading Projects" | same cause: its audio input is the Bluetooth device's microphone. Fix as above; it is not caused by this tool |

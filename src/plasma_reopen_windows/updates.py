@@ -21,12 +21,13 @@ import threading
 import time
 from gi.repository import Gio, GLib
 from .apps import power
-from .config import log, notify, progress
+from .config import STATE_DIR, log, notify, progress
 from .session import do_restore, do_save
 
 PK = "org.freedesktop.PackageKit"
 # where PackageKit (dnf5 backend) puts the packages it downloads (measured)
 PK_PACKAGES = "/var/cache/PackageKit/*/metadata/*/packages/*.rpm"
+PENDING = os.path.join(STATE_DIR, "update-pending")     # armed: report the result at the next login
 # pkcon exit code when there is nothing to do ("no updates available")
 NOTHING_TO_DO = 5
 
@@ -155,6 +156,72 @@ def count_updates():
                if re.match(r"\S.*\s\S+\s\(\S+\)$", l) and not l.startswith(("Status", "Transaction", "Results")))
 
 
+def installonly_limit():
+    """How many kernels dnf keeps (installonly_limit, default 3)."""
+    limit = 3
+    for path in ["/etc/dnf/dnf.conf"] + sorted(glob.glob("/etc/dnf/libdnf5.conf.d/*.conf")):
+        try:
+            with open(path) as f:
+                for line in f:
+                    m = re.match(r"\s*installonly_limit\s*=\s*(\d+)", line)
+                    if m:
+                        limit = int(m.group(1))
+        except OSError:
+            pass
+    return limit
+
+
+def installed_kernels():
+    r = subprocess.run(["rpm", "-q", "kernel-core"], capture_output=True, text=True, check=False)
+    return len([l for l in r.stdout.splitlines() if l.startswith("kernel-core-")])
+
+
+def boot_short(names, kernel=None, boot="/boot", kernels=None, limit=None):
+    """(needed, free) in MiB when a new kernel is among the updates and /boot
+    has no room for it, else None. Measured 2026-11-25: /boot (966 MiB) held
+    three kernels of about 206 MiB each plus the rescue one; the new kernel
+    could not be written and PackageKit cancelled the whole update at the
+    restart. A new kernel's files take about what the running one's take: the
+    package (vmlinuz, System.map) first, its boot image (initramfs) at the end
+    of the update; with the kept number of kernels reached, dnf removes the
+    oldest before that image is written."""
+    if not any(n.startswith("kernel-core_") for n in names):
+        return None
+    kernel = kernel or os.uname().release
+
+    def size(f):
+        try:
+            return os.stat(os.path.join(boot, f % kernel)).st_size // 1048576
+        except OSError:
+            return 0
+    need = 64 + sum(size(f) for f in ("vmlinuz-%s", "System.map-%s", ".vmlinuz-%s.hmac"))
+    kernels = installed_kernels() if kernels is None else kernels
+    if kernels < (installonly_limit() if limit is None else limit):
+        need += size("initramfs-%s.img")              # nothing is removed to make room for it
+    st = os.statvfs(boot)
+    free = st.f_bavail * st.f_frsize // 1048576
+    return (need, free) if free < need else None
+
+
+def report_result():
+    """At the login after Save & Update & Restart: did the updates install?
+    (PackageKit cancels all of them when one fails.)"""
+    if not os.path.exists(PENDING):
+        return None
+    os.remove(PENDING)
+    r = subprocess.run(pkcon("offline-status"), capture_output=True, text=True, env=_env(), check=False)
+    out = r.stdout
+    status = next((l.split(None, 1)[1].strip() for l in out.splitlines() if l.startswith("Status:")), "")
+    details = next((l.split(":", 1)[1].strip() for l in out.splitlines() if l.startswith("ErrorDetails:")), "")
+    log("update result: %s %s" % (status or "unknown", details))
+    if status.lower().startswith("fail"):
+        notify("The updates were NOT installed", (details or "PackageKit reported a failure.") +
+               " Nothing was changed; the downloaded updates are kept.", critical=True)
+    elif status:
+        notify("System updated", "The updates were installed during the restart.")
+    return status
+
+
 def download(note):
     """Download all updates and prepare them; the number of packages, 0 when
     there is nothing to update, None on an error (already told)."""
@@ -175,12 +242,20 @@ def download(note):
         notify("Update cancelled", "The updates could not be downloaded: %s. Nothing was closed."
                % (tail[-1] if tail else "pkcon %d" % code), critical=True)
         return None
-    n = len(prepared())
+    names = prepared()
+    n = len(names)
     log("update: %d packages ready" % n)
     if n == 0:
         log("update: nothing prepared after the download")
         notify("Update cancelled", "PackageKit downloaded nothing it could install. Nothing was closed.",
                critical=True)
+        return None
+    short = boot_short(names)
+    if short:
+        log("update: /boot too small for the new kernel: needs about %d MiB, %d MiB free" % short)
+        notify("Update cancelled", "The new kernel needs about %d MB on /boot, only %d MB are free, so the "
+               "update would fail at the restart. Remove an old kernel first (README, Troubleshooting). "
+               "Nothing was closed." % short, critical=True)
         return None
     return n
 
@@ -206,5 +281,7 @@ def do_update():
         do_restore()
         return False
     log("update: %d packages are installed at the restart" % n)
+    with open(PENDING, "w") as f:
+        f.write(str(n))
     power("reboot")
     return True

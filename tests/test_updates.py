@@ -142,5 +142,62 @@ class TestProgress(unittest.TestCase):
         self.assertEqual(shown, [25, 50])              # 4 to download: 1 of 4, 2 of 4
 
 
+class TestBoot(unittest.TestCase):
+    """/boot too small for the new kernel (measured 2026-11-25: the whole
+    update failed at the restart, 'needs 74MB more space on /boot')."""
+    def setUp(self):
+        import tempfile
+        self.boot = tempfile.mkdtemp()
+        for name, mib in (("vmlinuz-K", 18), ("System.map-K", 12), ("initramfs-K.img", 176)):
+            with open(os.path.join(self.boot, name), "wb") as f:
+                f.truncate(mib * 1048576)
+
+    def check(self, free, kernels, limit=3, names=("kernel-core_7.3.4-200.fc44.x86_64",)):
+        st = mock.Mock(f_bavail=free, f_frsize=1048576)
+        with mock.patch.object(updates.os, "statvfs", return_value=st):
+            return updates.boot_short(list(names), "K", self.boot, kernels, limit)
+
+    def test_full_boot(self):
+        self.assertEqual(self.check(0, 3), (94, 0))
+
+    def test_at_the_limit_the_oldest_makes_room_for_the_image(self):
+        self.assertIsNone(self.check(100, 3))
+
+    def test_below_the_limit_the_image_needs_room_too(self):
+        self.assertEqual(self.check(207, 2), (270, 207))   # one old kernel removed only: still too small
+        self.assertIsNone(self.check(207, 2, limit=2))     # ... with installonly_limit=2 it fits
+
+    def test_no_kernel_no_check(self):
+        self.assertIsNone(self.check(0, 3, names=("zlib_1.3.x86_64",)))
+
+
+class TestResult(unittest.TestCase):
+    def run_report(self, out):
+        import tempfile
+        pending = os.path.join(tempfile.mkdtemp(), "pending")
+        open(pending, "w").close()
+        with mock.patch.object(updates, "PENDING", pending), \
+                mock.patch.object(updates.subprocess, "run", return_value=done(0, out)), \
+                mock.patch.object(updates, "notify") as note, mock.patch.object(updates, "log"):
+            status = updates.report_result()
+            self.assertFalse(os.path.exists(pending))
+            again = updates.report_result()              # once only
+        return status, note.call_args, again
+
+    def test_failed_is_reported(self):
+        out = ("Status:\tFailed\nErrorCode:failed-initialization\nErrorDetails:Transaction failed: installing "
+               "package kernel-core-7.3.4-200.fc44.x86_64 needs 74MB more space on the /boot filesystem; \n")
+        status, call, again = self.run_report(out)
+        self.assertEqual(status, "Failed")
+        self.assertIn("NOT installed", call[0][0])
+        self.assertIn("74MB", call[0][1])
+        self.assertTrue(call[1]["critical"])
+        self.assertIsNone(again)
+
+    def test_success(self):
+        status, call, _ = self.run_report("Status:\tSuccess\n")
+        self.assertEqual(call[0][0], "System updated")
+
+
 if __name__ == "__main__":
     unittest.main()
