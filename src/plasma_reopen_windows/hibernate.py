@@ -45,10 +45,11 @@ def gtt_mib():
     return total // 1048576
 
 
-def settle(read=gtt_mib, clock=time.time, sleep=time.sleep):
-    """Wait until the graphics memory stops shrinking; (before, after) in MiB.
-    Without a reading: a fixed few seconds."""
-    start = read()
+def settle(read=gtt_mib, clock=time.time, sleep=time.sleep, start=None):
+    """Wait until the graphics memory stops shrinking; (start, after) in MiB,
+    start = the reading before minimizing when given. Without a reading: a
+    fixed few seconds."""
+    start = read() if start is None else start
     if start is None:
         sleep(5)
         return None, None
@@ -73,8 +74,9 @@ def before():
     with open(SAVED + ".new", "w") as f:
         json.dump({"time": time.time(), "ids": ids}, f)
     os.replace(SAVED + ".new", SAVED)
+    first = gtt_mib()                                # before: what the shown windows hold
     kw.run(JS_MINIMIZE % (json.dumps(ids), "true"))
-    start, end = settle()
+    start, end = settle(start=first)
     msg = "hibernate: minimized %d windows" % len(ids)
     if start is not None:
         msg += "; graphics memory in RAM %d -> %d MiB" % (start, end)

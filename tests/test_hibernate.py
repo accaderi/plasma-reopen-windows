@@ -62,6 +62,7 @@ class TestBeforeAfter(unittest.TestCase):
                   mock.patch.object(hibernate, "STATE_DIR", d),
                   mock.patch.object(hibernate, "KWin", return_value=self.kw),
                   mock.patch.object(hibernate, "settle", return_value=(1600, 1400)),
+                  mock.patch.object(hibernate, "gtt_mib", return_value=1600),
                   mock.patch.object(hibernate, "log"),
                   mock.patch.dict(config.CFG, {"hibernate_minimize": "yes"})):
             x.start()
