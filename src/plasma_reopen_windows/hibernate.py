@@ -45,6 +45,9 @@ def gtt_mib():
     return total // 1048576
 
 
+TRACE = []                # the readings of the last settle(), one per second
+
+
 def settle(read=gtt_mib, clock=time.time, sleep=time.sleep, start=None):
     """Wait until the graphics memory stops shrinking; (start, after) in MiB,
     start = the reading before minimizing when given. Without a reading: a
@@ -54,10 +57,12 @@ def settle(read=gtt_mib, clock=time.time, sleep=time.sleep, start=None):
         sleep(5)
         return None, None
     begin = clock()
+    TRACE[:] = [start]
     lowest, since, end = start, begin, begin + SETTLE_MAX
     while clock() < end and (clock() - begin < SETTLE_MIN or clock() - since < SETTLE_STEADY):
         sleep(1)
         now = read()
+        TRACE.append(now)
         if now is not None and now < lowest:
             lowest, since = now, clock()
     return start, read()
@@ -79,7 +84,8 @@ def before():
     start, end = settle(start=first)
     msg = "hibernate: minimized %d windows" % len(ids)
     if start is not None:
-        msg += "; graphics memory in RAM %d -> %d MiB" % (start, end)
+        msg += "; graphics memory in RAM %d -> %d MiB (each second: %s)" % (
+            start, end, " ".join(str(t) for t in TRACE))
     log(msg)                                     # log() also prints it
     return len(ids)
 
