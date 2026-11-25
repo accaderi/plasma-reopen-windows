@@ -78,7 +78,10 @@ def set_sound_output(saved, final=False):
     all_sinks = sinks()
     # HDMI/DisplayPort outputs change numbers between boots: find them by the
     # monitor's name. Others (Bluetooth, USB, built-in) keep their name.
-    if re.search(r"HDMI|DisplayPort|\.DP", saved["name"]) and saved["nick"]:
+    # A generic nick ("HDMI 0") means the monitor had not told its name when
+    # it was saved (measured 2026-11-25): then only the port name is known.
+    named = saved["nick"] and not re.fullmatch(r"(HDMI|DP|DisplayPort)[ -]?\d*", saved["nick"])
+    if re.search(r"HDMI|DisplayPort|\.DP", saved["name"]) and named:
         by_nick = [s for s in all_sinks if s["nick"] == saved["nick"]]
         target = by_nick[0] if len(by_nick) == 1 else None
     else:

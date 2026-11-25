@@ -253,6 +253,7 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
     try:
         relaunch(launches, kw)
         unmute_at = time.time() + 30      # counted from when all apps are started
+        sound_until = time.time() + 20
         watch_until = time.time() + watch if unknown else 0
         quiet_until = time.time() + min(watch, 12) if unknown and launches else 0   # they start within seconds
         placer = Placer(kw, {"windows": windows}, set(ignore_ids), move=move, strict_ids=strict_ids, fixed=fixed)
@@ -272,6 +273,12 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
             report_wait(placer, media, len(windows) + len(fixed or {}), end, settle, unmute_at if muting else 0,
                         watch_until)
             # done, or no further window for a while (an app may open fewer windows)
+            # the sound output's monitor may still be waking up, but it is not
+            # waited for longer than the windows and videos need, plus 20 s
+            if sound and time.time() > sound_until and not media.todo and \
+                    (not placer.todo or time.time() - placer.last_match > settle):
+                set_sound_output(sound, final=True)
+                sound = None
             if not sound and not media.todo and time.time() > watch_until and \
                     (not placer.todo or time.time() - placer.last_match > settle):
                 break
