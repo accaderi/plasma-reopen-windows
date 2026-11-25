@@ -131,6 +131,19 @@ Electron apps such as Obsidian, Slack or Discord (they may come back with only
 one window), X11 sessions, other distributions. It should work on any Plasma 6
 desktop; reports are welcome.
 
+### Will it work on my computer?
+
+It does not depend on the hardware: it talks to KWin, the apps and the
+browsers' files, not to drivers.
+
+| Part | Needs | Elsewhere |
+|---|---|---|
+| Everything | **KDE Plasma 6** (KWin), Python 3 with PyGObject, any distribution | not for GNOME, Xfce, Cinnamon ...: KWin is what lists and places the windows. Tested on Wayland; X11 not yet |
+| The settings app | PySide6 | without it, all of it works from the menu entries and the command line |
+| Save & Update & Restart | PackageKit (`pkcon`; Fedora, openSUSE, Ubuntu, ...) | not offered without it; its download progress was measured with Fedora's dnf5 |
+| Browser sessions (all tabs with their history) | Chrome, Chromium, Brave, Edge, Vivaldi, Firefox (also as Flatpak) | other browsers come back as they restore themselves |
+| Minimizing windows when hibernation is short of memory | [hibernate-prepare](https://github.com/accaderi/msi-bravo15-c7vf-fedora-hibernation-fix), or your own sleep hook | helps on graphics that share the RAM (AMD, Intel); with only a separate graphics card it frees little |
+
 ## Install
 
 Needs Python 3 with PyGObject, `kdialog` and `notify-send` (on Fedora KDE
