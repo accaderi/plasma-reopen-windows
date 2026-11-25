@@ -11,6 +11,8 @@ import glob
 import json
 import os
 import struct
+import urllib.parse
+from gi.repository import GLib
 
 CHROME_DIRS = {
     "google-chrome": "~/.config/google-chrome",
@@ -22,6 +24,11 @@ CHROME_DIRS = {
     "microsoft-edge": "~/.config/microsoft-edge",
     "vivaldi-stable": "~/.config/vivaldi",
 }
+FIREFOX_APPS = {"org.mozilla.firefox", "firefox", "firefox-esr", "org.mozilla.firefox_esr"}
+BROWSER_APPS = set(CHROME_DIRS) | {"com.microsoft.Edge"} | FIREFOX_APPS
+# Plasma Browser Integration's tab search (the KRunner "browser tabs" plugin):
+# the tabs open now, with their titles and addresses, and it brings one to the front
+TABS_RUNNER = ("org.kde.plasma.browser_integration", "/TabsRunner", "org.kde.krunner1")
 TITLE_SUFFIXES = (" - Google Chrome", " - Chromium", " - Brave", " - Microsoft Edge", " - Vivaldi",
                   " — Mozilla Firefox", " - Mozilla Firefox")
 
@@ -222,16 +229,19 @@ def window_title(caption):
     return caption
 
 
-def tabs_of(app, captions, firefox_profiles=()):
-    """For each window caption of a browser, {"urls": [...], "active": index of
-    the front tab} (or None if not found)."""
+def session_windows(app, firefox_profiles=()):
+    """The windows in a browser's session file: [{"title", "urls", "active"}]."""
     try:
         if app in CHROME_DIRS:
-            found = chrome_windows(os.path.expanduser(CHROME_DIRS[app]))
-        else:
-            found = [w for p in firefox_profiles for w in firefox_windows(p)]
+            return chrome_windows(os.path.expanduser(CHROME_DIRS[app]))
+        return [w for p in firefox_profiles for w in firefox_windows(p)]
     except (OSError, ValueError):
-        return [None] * len(captions)
+        return []
+
+
+def match_titles(captions, found):
+    """For each caption the session window with that front tab title (or None);
+    the matched ones are taken out of found."""
     out = []
     for c in captions:
         title = window_title(c)
@@ -241,4 +251,77 @@ def tabs_of(app, captions, firefox_profiles=()):
         out.append({"urls": hit["urls"], "active": hit.get("active", 0)} if hit else None)
         if hit:
             found.remove(hit)
+    return out
+
+
+def tabs_of(app, captions, firefox_profiles=()):
+    """For each window caption of a browser, {"urls": [...], "active": index of
+    the front tab} (or None if not found)."""
+    return match_titles(captions, session_windows(app, firefox_profiles))
+
+# ---- the browser running now (Plasma Browser Integration) -----------------------
+def live_tabs(bus, title):
+    """Tabs open now whose title is exactly this: [(tab id, address)]. Empty
+    without Plasma Browser Integration. Its search finds titles and addresses
+    (2 characters at least); the exact title is picked from what it finds."""
+    if bus is None or len(title) < 2:
+        return []
+    try:
+        found = bus.call_sync(TABS_RUNNER[0], TABS_RUNNER[1], TABS_RUNNER[2], "Match",
+                              GLib.Variant("(s)", (title,)), None, 0, 3000).unpack()[0]
+    except GLib.Error:
+        return []
+    return [(m[0], (m[5].get("urls") or [m[5].get("subtext", "")])[0]) for m in found if m[1] == title]
+
+
+def bring_tab_to_front(bus, title):
+    """Make the tab with this title the front tab of its window (and that
+    window active). False if no such tab is open."""
+    tabs = live_tabs(bus, title)
+    if not tabs:
+        return False
+    try:
+        bus.call_sync(TABS_RUNNER[0], TABS_RUNNER[1], TABS_RUNNER[2], "Run",
+                      GLib.Variant("(ss)", (tabs[0][0], "")), None, 0, 3000)
+        return True
+    except GLib.Error:
+        return False
+
+
+def page(url):
+    """An address without what changes while a page is used (#part)."""
+    return urllib.parse.urldefrag(url)[0].rstrip("/")
+
+
+def tab_overlap(saved, found):
+    """How much of a saved window's pages a window has now (0..1)."""
+    saved = {page(u) for u in saved if u}
+    return len(saved & {page(u) for u in found}) / len(saved) if saved else 0.0
+
+
+def window_tabs(bus, apps, firefox_profiles=None):
+    """{window id: {"urls", "active"}} for the browser windows in apps
+    ({app: [windows]}). From the browser's session file; a window not in it
+    (the browser writes it with a delay: measured 2026-11-25, a window opened
+    in the last half minute was missing) gets at least its front page, which
+    the browser integration finds by the window title."""
+    out = {}
+    for app, ws in apps.items():
+        if app not in BROWSER_APPS:
+            continue
+        found = session_windows(app, (firefox_profiles or {}).get(app, []))
+        for w, t in zip(ws, match_titles([w["caption"] for w in ws], found)):
+            if t and t["urls"]:
+                out[w["id"]] = t
+                continue
+            live = [u for _, u in live_tabs(bus, window_title(w["caption"])) if u.startswith(("http", "file"))]
+            if not live:
+                continue
+            # the session file has the window, but with an older front tab
+            hit = next((f for f in found if page(live[0]) in [page(u) for u in f["urls"]]), None)
+            if hit:
+                found.remove(hit)
+                out[w["id"]] = {"urls": hit["urls"], "active": [page(u) for u in hit["urls"]].index(page(live[0]))}
+            else:
+                out[w["id"]] = {"urls": live[:1], "active": 0}     # only its front page is known
     return out

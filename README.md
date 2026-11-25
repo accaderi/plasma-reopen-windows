@@ -74,7 +74,7 @@ MSI Bravo 15 C7VF (AMD + NVIDIA) with Fedora, see
 
 | | |
 |---|---|
-| **Chrome** (also Chromium, Brave, Edge, Vivaldi) | all windows with their tabs |
+| **Chrome** (also Chromium, Brave, Edge, Vivaldi) | all windows with their tabs. A window Chrome itself loses (it writes its session with a delay, so a window opened in the last seconds before the restart can be missing) is opened again by this tool with its pages, or at least its front page ([how windows are recognized](#how-a-browser-window-is-recognized-after-a-restart)) |
 | **VS Code** (also VSCodium) | all windows; unsaved changes through VS Code's own backup |
 | **Konsole** | every window with its tabs, each tab in its folder |
 | **Dolphin** | its folder, and tabs through Dolphin's own "restore last session" |
@@ -487,9 +487,41 @@ value). `plasma-reopen-windows config` shows them all.
    are downloaded first (`pkcon update --only-download`) and armed after the
    apps closed (`pkcon offline-trigger`).
 4. **Restore at login:** starts the apps (Konsole with its tabs), matches the
-   new windows to the saved ones by app and title, moves them back, restores
+   new windows to the saved ones by app and title (a browser window whose
+   title changed, for example because Chrome put its "What's New" tab in
+   front after an update, by its pages; then this tool also places it and
+   brings the saved tab to the front again), moves them back, restores
    the stacking order, seeks and pauses the videos, and selects the sound
-   output again.
+   output again. Browser windows Chrome did not bring back are opened again
+   (see below).
+
+### How a browser window is recognized after a restart
+
+Every save records each browser window's pages: from the browser's session
+file, and, with Plasma Browser Integration, the pages open at that moment
+(the browser writes its file with a delay; a window opened shortly before the
+save can be missing from it). After the restart each browser window that
+appears is compared with the saved ones:
+
+| The window that appears | Is taken as |
+|---|---|
+| has the saved window's title (its front tab) | that saved window. "Remember Window Positions", if it handles the browser, places it; otherwise this tool |
+| has another title, but **at least half** of a saved window's pages | that saved window. This tool places it (the script, which goes by the title, cannot) and brings the saved front tab to the front again, so its video can be put back too |
+| has another title and some, but less than half, of a saved window's pages | that saved window only if it is the last one of the browser still missing, after a wait |
+| has **none** of the saved window's pages | a new window, never a saved one: left where it opened |
+
+Only the saved pages count, not the new ones: tabs you added, or Chrome's
+"What's New" tab after an update, change nothing. A window with 3 saved pages
+that still has 2 of them is recognized, however many new tabs it has; one
+with 1 of them only as the last missing window; one with none of them is a
+new window. A window whose pages the browser has not written yet waits about
+18 s before it is taken as the last missing one.
+
+A saved window that has not appeared when the others are done, and whose
+pages are open nowhere (the browser lost it), is opened again by this tool
+with its pages, or at least the front page, and placed. Firefox: recognized
+by its pages too, but a lost Firefox window is not opened again (its session
+file needs the profile, which only a running Firefox tells).
 
 ## Troubleshooting
 
@@ -498,6 +530,7 @@ value). `plasma-reopen-windows config` shows them all.
 | "Shutdown cancelled: X did not close" | X probably asks to save something: answer it or close X, then try again |
 | "Programs are still running in Konsole" | finish or stop them, then try again |
 | Apps came back, windows not in place | with "Remember Window Positions" on, that script places the apps it handles and this tool the rest (the log says which); to let this tool place everything, set `place_windows = yes` and turn the script off |
+| After a Chrome update a window is on the wrong screen, with "What's New" in front | Chrome adds that tab after an update, so the window's title is not the saved one. This tool then recognizes the window by its pages; that needs the window's pages in the save, which saves made before this version lack. The tab search of Plasma Browser Integration (the browser extension) makes it more reliable: with it, the tool also finds pages Chrome had not written down yet |
 | Nothing came back | `plasma-reopen-windows status` and the log; the autostart entry must exist in `~/.config/autostart/` |
 | An app should not be touched | add its id to `exclude` |
 | An app you did not open (Spectacle, the settings app) starts at login | Plasma's own session restore started it (its list: `~/.local/state/plasmasessionrestorestaterc`): choose *Start with an empty session* (see Use) |

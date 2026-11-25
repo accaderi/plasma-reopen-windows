@@ -115,12 +115,14 @@ def build(name, st, old=None, auto=False):
         apps.append({"app": app, "name": app_name(find_desktop(app, ws[0]) or app), "launch": spec,
                      "enabled": prev.get("enabled", True), "start_delay": prev.get("start_delay", 0)})
     # the open tabs of every browser window, from the browser's session file
-    tabs = {}
-    for app, ws in st["apps"].items():
-        if app in BROWSERS:
-            spec = next((a["launch"] for a in apps if a["app"] == app), {})
-            found = tabs_of(app, [w["caption"] for w in ws], spec.get("firefox_profiles", []))
-            tabs.update({w["id"]: t for w, t in zip(ws, found) if t and t["urls"]})
+    tabs = st.get("tabs")
+    if tabs is None:
+        tabs = {}
+        for app, ws in st["apps"].items():
+            if app in BROWSERS:
+                spec = next((a["launch"] for a in apps if a["app"] == app), {})
+                found = tabs_of(app, [w["caption"] for w in ws], spec.get("firefox_profiles", []))
+                tabs.update({w["id"]: t for w, t in zip(ws, found) if t and t["urls"]})
     windows = []
     old_wins = (old or {}).get("windows", [])
     for w in st["wins"]:

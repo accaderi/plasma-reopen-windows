@@ -8,7 +8,8 @@ import subprocess
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
-from .apps import CLOSE_TIMEOUT, ORDER, close_only_apps, app_kind, app_name, find_desktop, ignored, konsole_tabs, launch_spec, quit_app, real_path, relaunch, wait_closed
+from .apps import CLOSE_TIMEOUT, FIREFOX, ORDER, close_only_apps, firefox_profiles, app_kind, app_name, find_desktop, ignored, konsole_tabs, launch_spec, quit_app, real_path, relaunch, wait_closed
+from .browsers import BROWSER_APPS, CHROME_DIRS, bring_tab_to_front, live_tabs, match_titles, session_windows, tab_overlap, window_tabs, window_title
 from .audio import default_sink, mute_outputs, set_sound_output, unmute_outputs, wait_for_quiet
 from .config import CFG, STATE, STATE_DIR, log, notify, progress
 from .kwin import JS_PLACE, JS_RAISE, KWin
@@ -46,8 +47,10 @@ def snapshot(kw, only=None):
         if p["url"].startswith("file://") and p["pid"]:
             files.setdefault(p["pid"], []).append(real_path(urllib.parse.unquote(p["url"][7:])))
     from .reopen import details
+    ff = {app: sorted({d for w in ws for d in firefox_profiles(w["pid"])}) for app, ws in apps.items() if app in FIREFOX}
     return {"snap": snap, "wins": wins, "apps": apps, "konsole": konsole, "busy": busy,
-            "media": media, "files": files, "sound": default_sink(), "details": details(kw.bus, wins, files)}
+            "media": media, "files": files, "sound": default_sink(), "details": details(kw.bus, wins, files),
+            "tabs": window_tabs(kw.bus, apps, ff)}
 
 
 def close_apps(kw, apps, konsole, files, what="Shutdown"):
@@ -118,6 +121,10 @@ def do_save(only=None):
     if launches is None:
         return None
 
+    for w in st["wins"]:            # the pages of each browser window (matched by them after a restart)
+        t = st["tabs"].get(w["id"])
+        if t:
+            w.update(urls=t["urls"], active=t["active"])
     state = {"saved": time.time(), "outputs": st["snap"]["outputs"], "screens": st["snap"]["screens"],
              "launch": launches, "windows": st["wins"], "media": st["media"], "sound": st["sound"]}
     write_json(STATE, state)
@@ -269,6 +276,8 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
                     (not placer.todo or time.time() - placer.last_match > settle):
                 break
             time.sleep(1.5 if launches else 0.4)
+        if login:
+            reopen_lost(kw, placer, launches)
         if sound:
             set_sound_output(sound, final=True)
     finally:
@@ -282,6 +291,31 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
             time.sleep(2 if launches else 0.3)    # let other scripts finish placing windows first
             placer.restack()
     return placer
+
+
+def reopen_lost(kw, placer, launches, wait=30):
+    """Open again, with their pages, the browser windows the browser did not
+    restore itself, and place them."""
+    from .reopen import command
+    lost = placer.lost()
+    specs = []
+    for c in lost:
+        desktop = next((l.get("desktop") for l in launches if l["app"] == c["app"]), None) or c["app"]
+        spec = command(c, desktop)
+        if spec:
+            specs.append(spec)
+            placer.force.add(c.get("id"))
+    if not specs:
+        return
+    log("the browser did not restore %d window%s; opening %s again: %s" % (
+        len(specs), "s" if len(specs) > 1 else "", "it" if len(specs) == 1 else "them",
+        "; ".join(c["caption"][:40] for c in lost)))
+    progress("opening %d browser window%s again" % (len(specs), "s" if len(specs) > 1 else ""))
+    relaunch(specs, kw)
+    end = time.time() + wait
+    while time.time() < end and any(c in sum(placer.todo.values(), []) for c in lost):
+        placer.step()
+        time.sleep(1)
 
 
 def report_wait(placer, media, total, end, settle, unmute_at, watch_until):
@@ -320,8 +354,34 @@ class Placer:
         # pairs decided beforehand (window id -> saved window): placed at once
         self.fixed = dict(fixed or {})
         self.ignore |= set(self.fixed)
+        self.front = {}      # window id -> saved window whose front tab is brought back
+        self.force = set()   # saved window ids placed by this tool in any case (opened again by it)
+
+    def pages_now(self, w, cache):
+        """The pages of a browser window open now (from the browser's session
+        file, by the window title), or None if not known."""
+        if w["app"] not in BROWSER_APPS:
+            return None
+        if w["app"] not in cache:
+            ff = sorted(firefox_profiles(w["pid"])) if w["app"] in FIREFOX and w["pid"] > 0 else []
+            cache[w["app"]] = session_windows(w["app"], ff)
+        hit = match_titles([w["caption"]], list(cache[w["app"]]))[0]
+        return hit["urls"] if hit else None
+
+    def by_pages(self, w, cands, cache):
+        """(overlap, index, pages now) of the saved window with most of the
+        same pages; pages now is None when they are not known (no saved pages
+        to compare, or the browser has not written the window yet)."""
+        if not any(c.get("urls") for c in cands):
+            return 0.0, 0, None
+        urls = self.pages_now(w, cache)
+        if not urls:
+            return 0.0, 0, None
+        return max((tab_overlap(c.get("urls", []), urls), i) for i, c in enumerate(cands)) + (urls,)
 
     def step(self):
+        if self.front:
+            self.fronts()
         if not self.todo and not self.fixed:
             return
         snap = self.kw.windows()
@@ -335,6 +395,7 @@ class Placer:
                         moves[w["id"]] = self.target(c, snap)
                         log("placing %s \"%s\" as \"%s\" (chosen)" % (w["app"], w["caption"][:40], c["caption"][:40]))
             self.fixed = {}
+        cache = {}
         for w in snap["windows"]:
             if w["id"] in self.ignore or w["app"] not in self.todo:
                 continue
@@ -342,6 +403,29 @@ class Placer:
             self.seen[w["id"]] = self.seen.get(w["id"], 0) + 1
             score, i = max((similar(strip_caption(w["caption"]), strip_caption(c["caption"])), i)
                            for i, c in enumerate(cands))
+            how, weak = "match %.2f" % score, score < 0.6
+            if score < 0.6:
+                # A browser window whose front tab is not the saved one (Chrome
+                # puts "What's New" in front after an update: measured
+                # 2026-11-25): matched by its pages
+                overlap, j, urls = self.by_pages(w, cands, cache)
+                if overlap >= 0.5:
+                    score, i, how = 1.0, j, "by its pages, %d %%" % (overlap * 100)
+                    self.front[w["id"]] = cands[j]
+                elif urls is not None:
+                    # A window opened meanwhile (by you) has none of the saved
+                    # pages: never taken for a saved window that it shares none with
+                    ok = [k for k, c in enumerate(cands) if not c.get("urls") or tab_overlap(c["urls"], urls) > 0]
+                    if not ok:
+                        continue
+                    score, i = max((similar(strip_caption(w["caption"]), strip_caption(cands[k]["caption"])), k)
+                                   for k in ok)
+                    how = "match %.2f" % score
+                elif any(c.get("urls") for c in cands) and w["app"] in BROWSER_APPS:
+                    # its pages are not written yet (the browser saves with a
+                    # delay): wait longer before taking the remaining one
+                    if self.seen[w["id"]] < 12:
+                        continue
             # Titles fill in after loading; wait a few passes for a good match
             if score < 0.6 and (w["id"] in self.strict or self.seen[w["id"]] < 4):
                 continue
@@ -351,12 +435,35 @@ class Placer:
             self.ignore.add(w["id"])
             self.matched.append((c, w["id"]))
             self.last_match = time.time()
-            if c["app"] not in self.move:
+            # not recognized by its title: "Remember Window Positions" (which
+            # goes by the title) has not placed it either
+            if c["app"] not in self.move and not weak and c.get("id") not in self.force:
                 continue
             moves[w["id"]] = self.target(c, snap)
-            log("placing %s \"%s\" as \"%s\" (match %.2f)" % (w["app"], w["caption"][:40], c["caption"][:40], score))
+            log("placing %s \"%s\" as \"%s\" (%s)" % (w["app"], w["caption"][:40], c["caption"][:40], how))
         if moves:
             self.kw.run(JS_PLACE % json.dumps(moves))
+
+    def fronts(self):
+        """Bring the saved front tab to the front again in windows matched by
+        their pages (also lets its video load, to be put back at its place)."""
+        for wid, c in list(self.front.items()):
+            if bring_tab_to_front(self.kw.bus, window_title(c["caption"])):
+                log("brought \"%s\" to the front again" % c["caption"][:50])
+                del self.front[wid]
+
+    def lost(self):
+        """Saved browser windows that did not come back and whose pages are not
+        open anywhere: the browser lost them (it writes its session with a
+        delay, and a window opened shortly before the restart is missing)."""
+        out = []
+        for app, cands in self.todo.items():
+            if app not in CHROME_DIRS:       # (Firefox: its session file needs the profile)
+                continue
+            open_now = [u for f in session_windows(app) for u in f["urls"]]
+            out += [c for c in cands if c.get("urls") and tab_overlap(c["urls"], open_now) == 0
+                    and not live_tabs(self.kw.bus, window_title(c["caption"]))]
+        return out
 
     @staticmethod
     def target(c, snap):
