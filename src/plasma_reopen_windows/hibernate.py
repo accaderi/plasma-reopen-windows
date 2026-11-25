@@ -3,15 +3,16 @@
 What a window shows is kept in graphics memory; on a graphics chip that shares
 the RAM (Radeon, Intel) it stays in RAM and goes into the hibernation image,
 and it cannot be moved to swap first. Measured 2026-11-25 (Radeon 680M, KWin
-draws every screen on it, the external ones too): a maximized video window on
-a 4K screen held about 280 MiB; minimized, about 50 MiB after 10 s.
+draws every screen on it, the external ones too): a playing video window gives
+back about 100 MiB, in one step 20-26 s after it is minimized; the desktop
+shown instead of the windows costs about 45 MiB. A small gain that takes
+half a minute, so hibernate-prepare asks for it only when the image would not
+fit otherwise.
 
-  hibernate before   minimize every window that is shown, remember them, and
-                     wait until the graphics memory stops shrinking
-  hibernate after    show the same windows again, in the same order
-
-hibernate-prepare runs both (as the user of each desktop session) when it
-finds this tool; any sleep hook can do the same.
+  hibernate before [S]  minimize every window that is shown, remember them,
+                        and wait at least S seconds (default 15) and until the
+                        graphics memory stops shrinking
+  hibernate after       show the same windows again, in the same order
 """
 
 import glob
@@ -48,7 +49,7 @@ def gtt_mib():
 TRACE = []                # the readings of the last settle(), one per second
 
 
-def settle(read=gtt_mib, clock=time.time, sleep=time.sleep, start=None):
+def settle(read=gtt_mib, clock=time.time, sleep=time.sleep, start=None, least=None):
     """Wait until the graphics memory stops shrinking; (start, after) in MiB,
     start = the reading before minimizing when given. Without a reading: a
     fixed few seconds."""
@@ -56,10 +57,11 @@ def settle(read=gtt_mib, clock=time.time, sleep=time.sleep, start=None):
     if start is None:
         sleep(5)
         return None, None
+    least = SETTLE_MIN if least is None else least
     begin = clock()
     TRACE[:] = [start]
-    lowest, since, end = start, begin, begin + SETTLE_MAX
-    while clock() < end and (clock() - begin < SETTLE_MIN or clock() - since < SETTLE_STEADY):
+    lowest, since, end = start, begin, begin + max(SETTLE_MAX, least + 10)
+    while clock() < end and (clock() - begin < least or clock() - since < SETTLE_STEADY):
         sleep(1)
         now = read()
         TRACE.append(now)
@@ -68,7 +70,7 @@ def settle(read=gtt_mib, clock=time.time, sleep=time.sleep, start=None):
     return start, read()
 
 
-def before():
+def before(least=None):
     if CFG.get("hibernate_minimize") != "yes":
         log("hibernate: minimizing is switched off (hibernate_minimize)")
         return 0
@@ -81,7 +83,7 @@ def before():
     os.replace(SAVED + ".new", SAVED)
     first = gtt_mib()                                # before: what the shown windows hold
     kw.run(JS_MINIMIZE % (json.dumps(ids), "true"))
-    start, end = settle(start=first)
+    start, end = settle(start=first, least=least)
     msg = "hibernate: minimized %d windows" % len(ids)
     if start is not None:
         msg += "; graphics memory in RAM %d -> %d MiB (each second: %s)" % (

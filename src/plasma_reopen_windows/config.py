@@ -116,12 +116,11 @@ SETTINGS = [
               "saved one again; use = move an open window of that app to its place; "
               "skip = leave it out."),
     dict(key="hibernate_minimize", default="yes", type="bool", section="Hibernation",
-         label="Minimize windows before hibernating",
-         help="Graphics memory of visible windows stays in RAM and makes the hibernation "
-              "image bigger (a maximized video on a 4K screen: about 300 MiB on a Radeon, "
-              "measured). Minimized, it is freed within about 10 s. The windows come back "
-              "after waking, in the same order. Used when hibernate-prepare (or your own "
-              "sleep hook) runs \"plasma-reopen-windows hibernate before / after\".",
+         label="When hibernation would be refused for memory, minimize the windows first",
+         help="Graphics memory of shown windows stays in RAM and goes into the hibernation "
+              "image. Minimized, a playing video window gives back about 100 MiB after 20-30 s "
+              "(measured on a Radeon). hibernate-prepare tries this only when the image would "
+              "not fit otherwise; the windows come back after waking, in the same order.",
          when="you do not want the windows to disappear while hibernation starts."),
 ]
 

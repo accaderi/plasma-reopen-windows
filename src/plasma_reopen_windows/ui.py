@@ -457,7 +457,7 @@ class Overview(Page):
         v.addWidget(box)
         box = QGroupBox("Hibernation")
         bl = QVBoxLayout(box)
-        self.hib_minimize = QCheckBox("Minimize windows before hibernating, show them again after waking")
+        self.hib_minimize = QCheckBox("When hibernation would be refused for memory, minimize the windows first")
         self.hib_minimize.toggled.connect(self.set_hibernate_minimize)
         bl.addWidget(self.hib_minimize)
         self.hib_hint = hint("")
@@ -512,9 +512,10 @@ class Overview(Page):
         self.hib_minimize.blockSignals(False)
         prepare = os.path.exists("/usr/local/sbin/hibernate-prepare") or bool(shutil.which("hibernate-prepare"))
         self.hib_hint.setText(
-            "Graphics memory of shown windows stays in RAM and makes the hibernation image bigger; a "
-            "maximized video on a 4K screen costs about 300 MiB. Minimized, it is freed within about 10 s. " +
-            ("hibernate-prepare is installed and does this before each hibernation." if prepare else
+            "Graphics memory of shown windows stays in RAM and goes into the hibernation image. Minimized, "
+            "a playing video window gives back about 100 MiB after 20-30 s; the windows come back after "
+            "waking. " +
+            ("hibernate-prepare is installed: it tries this only when the image would not fit otherwise." if prepare else
              "Needs hibernate-prepare, or a sleep hook that runs \"plasma-reopen-windows hibernate "
              "before\" and \"after\"; without one, nothing happens."))
         data, what = read_session()

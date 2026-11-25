@@ -49,6 +49,13 @@ class TestSettle(unittest.TestCase):
         self.assertEqual(c.t, 5)
 
 
+class TestLeast(unittest.TestCase):
+    def test_longer_minimum_from_hibernate_prepare(self):
+        c = Clock()
+        hibernate.settle(lambda: 1300, c, c.sleep, least=30)
+        self.assertEqual(c.t, 30)
+
+
 class TestBeforeAfter(unittest.TestCase):
     def setUp(self):
         d = tempfile.mkdtemp()
