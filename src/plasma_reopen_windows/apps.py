@@ -168,6 +168,51 @@ def wait_closed(kw, app, kind, wins, pids, timeout):
     return False
 
 
+# Closed before a shut down or restart, but never started again: a started
+# Spectacle takes a new screenshot, and the one open cannot come back. Left
+# running (often in the background, without a window), Plasma notes it at the
+# log-out and starts it at the next login (measured 2026-11-25).
+CLOSE_ONLY = {"org.kde.spectacle": "spectacle"}
+
+
+def user_pids(exe):
+    """Processes of this user running this program."""
+    out = []
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            with open("/proc/%s/comm" % d) as f:
+                if f.read().strip() != exe:
+                    continue
+            if os.stat("/proc/" + d).st_uid == os.getuid():
+                out.append(int(d))
+        except OSError:
+            continue
+    return out
+
+
+def close_only_apps(kw, timeout):
+    """Close the CLOSE_ONLY apps: their windows like the ✕ button (an
+    unsaved screenshot is asked about), then what still runs without a window
+    (nothing on screen to lose). Returns the app that stayed open, or None."""
+    wins = [w for w in kw.windows()["windows"] if w["app"] in CLOSE_ONLY]
+    for app in sorted({w["app"] for w in wins}):
+        ws = [w for w in wins if w["app"] == app]
+        kw.run(JS_CLOSE % json.dumps([w["id"] for w in ws]))
+        if not wait_closed(kw, app, "generic", ws, [], timeout):
+            return app
+        log("closed %s (not started again)" % app)
+    for app, exe in CLOSE_ONLY.items():
+        for pid in user_pids(exe):
+            try:
+                os.kill(pid, signal.SIGTERM)
+                log("ended %s running in the background (not started again)" % app)
+            except OSError:
+                pass
+    return None
+
+
 def launch_spec(app, kind, wins, konsole, files):
     if kind == "konsole":
         tabs = [t for pid in sorted({w["pid"] for w in wins}) for t in konsole.get(pid, [])]

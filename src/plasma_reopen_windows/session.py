@@ -8,7 +8,7 @@ import subprocess
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
-from .apps import CLOSE_TIMEOUT, ORDER, app_kind, app_name, find_desktop, ignored, konsole_tabs, launch_spec, quit_app, real_path, relaunch, wait_closed
+from .apps import CLOSE_TIMEOUT, ORDER, close_only_apps, app_kind, app_name, find_desktop, ignored, konsole_tabs, launch_spec, quit_app, real_path, relaunch, wait_closed
 from .audio import default_sink, mute_outputs, set_sound_output, unmute_outputs, wait_for_quiet
 from .config import CFG, STATE, STATE_DIR, log, notify, progress
 from .kwin import JS_PLACE, JS_RAISE, KWin
@@ -103,6 +103,14 @@ def do_save(only=None):
         log("media: \"%s\" %s at %d s" % (m["title"][:50], m["status"].lower(), m["position"] // 1000000))
     if st["sound"]:
         log("sound output: %s" % (st["sound"]["description"] or st["sound"]["name"]))
+
+    if only is None:
+        left = close_only_apps(kw, int(CFG.get("close_timeout")))
+        if left:
+            log("cancelled: %s did not close" % left)
+            notify("Shutdown cancelled", "%s did not close (maybe a screenshot is not saved). "
+                   "Close it yourself, then try again." % app_name(left), critical=True)
+            return None
 
     notify("Saving session", "Closing %d apps…" % len(apps))
     log("saving: " + ", ".join("%s (%d)" % (a, len(ws)) for a, ws in apps.items()))

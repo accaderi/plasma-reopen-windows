@@ -169,6 +169,14 @@ plasma-reopen-windows restore   # opens them again
   no shortcut by default.
 - The normal **Shut Down** in the menu is unchanged and does not save
   anything: Plasma starts closing windows before any tool can step in.
+- Recommended: System Settings → Session → Desktop Session → *When logging
+  in: Start with an empty session*. Otherwise Plasma's own restore also runs
+  at login and starts apps that were left running (for example a Spectacle
+  in the background). After a normal Shut Down, the autosave question at
+  login brings the windows back instead, in their places.
+- Spectacle is closed before the restart (an unsaved screenshot is asked
+  about first) and not started again: a started Spectacle takes a new
+  screenshot.
 
 ### Commands
 
@@ -449,6 +457,7 @@ value). `plasma-reopen-windows config` shows them all.
 | Apps came back, windows not in place | with "Remember Window Positions" on, that script places the apps it handles and this tool the rest (the log says which); to let this tool place everything, set `place_windows = yes` and turn the script off |
 | Nothing came back | `plasma-reopen-windows status` and the log; the autostart entry must exist in `~/.config/autostart/` |
 | An app should not be touched | add its id to `exclude` |
+| An app you did not open (Spectacle, the settings app) starts at login | Plasma's own session restore started it (its list: `~/.local/state/plasmasessionrestorestaterc`): choose *Start with an empty session* (see Use) |
 | "Update cancelled: the updates could not be downloaded" | no network, or another update is running (Discover): wait and try again; the log has pkcon's last lines |
 | Bluetooth speaker or headset silent after login, or sounds like a phone call | an app that records (OBS, DaVinci Resolve, video calls) is using the speaker's built-in microphone, which forces it into headset mode. Pick the laptop microphone as default input (speaker icon → microphone), then reconnect the speaker. To stop the automatic switch for good, see below |
 | DaVinci Resolve hangs at "Loading Projects" | same cause: its audio input is the Bluetooth device's microphone. Fix as above; it is not caused by this tool |
