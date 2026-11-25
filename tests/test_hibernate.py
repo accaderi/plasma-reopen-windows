@@ -23,13 +23,19 @@ class Clock:
 
 
 class TestSettle(unittest.TestCase):
-    def test_waits_until_it_stops_shrinking(self):
+    def test_waits_through_the_pauses(self):
+        """Measured shape: a pause of a few seconds, then the next step down."""
         c = Clock()
-        values = iter([1600, 1550, 1450, 1400, 1400, 1401, 1399, 1399, 1399, 1399, 1399])
+        steps = [1675, 1675, 1510, 1510, 1502, 1502, 1502, 1523, 1550] + [1443] * 7 + [1396] * 20
+        values = iter(steps)
         start, end = hibernate.settle(lambda: next(values), c, c.sleep)
-        self.assertEqual(start, 1600)
-        self.assertEqual(end, 1399)
+        self.assertEqual((start, end), (1675, 1396))
         self.assertLess(c.t, hibernate.SETTLE_MAX)
+
+    def test_at_least_the_minimum(self):
+        c = Clock()
+        hibernate.settle(lambda: 1300, c, c.sleep)      # nothing to free
+        self.assertEqual(c.t, hibernate.SETTLE_MIN)
 
     def test_gives_up_after_the_limit(self):
         c = Clock()

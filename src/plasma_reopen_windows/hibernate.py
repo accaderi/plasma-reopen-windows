@@ -22,8 +22,12 @@ from .config import CFG, STATE_DIR, log
 from .kwin import JS_MINIMIZE, JS_RAISE, KWin
 
 SAVED = os.path.join(STATE_DIR, "hibernate-minimized.json")
-SETTLE_MAX = 20          # seconds to wait for the graphics memory at most
-SETTLE_STEADY = 3        # ... and how long it must not shrink any more
+# The memory comes back in steps with pauses of 3-7 s between them (measured:
+# 9 s and 16 s after minimizing), so: at least SETTLE_MIN, then until it has
+# not shrunk for SETTLE_STEADY, at most SETTLE_MAX seconds.
+SETTLE_MIN = 15
+SETTLE_STEADY = 5
+SETTLE_MAX = 25
 
 
 def gtt_mib():
@@ -48,8 +52,9 @@ def settle(read=gtt_mib, clock=time.time, sleep=time.sleep):
     if start is None:
         sleep(5)
         return None, None
-    lowest, since, end = start, clock(), clock() + SETTLE_MAX
-    while clock() < end and clock() - since < SETTLE_STEADY:
+    begin = clock()
+    lowest, since, end = start, begin, begin + SETTLE_MAX
+    while clock() < end and (clock() - begin < SETTLE_MIN or clock() - since < SETTLE_STEADY):
         sleep(1)
         now = read()
         if now is not None and now < lowest:
@@ -73,8 +78,7 @@ def before():
     msg = "hibernate: minimized %d windows" % len(ids)
     if start is not None:
         msg += "; graphics memory in RAM %d -> %d MiB" % (start, end)
-    log(msg)
-    print(msg)
+    log(msg)                                     # log() also prints it
     return len(ids)
 
 
@@ -89,5 +93,4 @@ def after():
     kw.run(JS_RAISE % (json.dumps(ids), "true"))      # the same order, the top one active
     os.remove(SAVED)
     log("hibernate: %s windows shown again" % n)
-    print("shown again: %s windows" % n)
     return n
