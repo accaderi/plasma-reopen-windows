@@ -460,6 +460,15 @@ class Overview(Page):
         self.hib_minimize = QCheckBox("When hibernation would be refused for memory, minimize the windows first")
         self.hib_minimize.toggled.connect(self.set_hibernate_minimize)
         bl.addWidget(self.hib_minimize)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Wait after minimizing:"))
+        self.hib_wait = QSpinBox()
+        self.hib_wait.setRange(15, 60)
+        self.hib_wait.setSuffix(" s")
+        self.hib_wait.valueChanged.connect(self.set_hibernate_wait)
+        row.addWidget(self.hib_wait)
+        row.addStretch()
+        bl.addLayout(row)
         self.hib_hint = hint("")
         bl.addWidget(self.hib_hint)
         v.addWidget(box)
@@ -467,9 +476,15 @@ class Overview(Page):
 
     def set_hibernate_minimize(self, on):
         value = "yes" if on else "no"
+        self.hib_wait.setEnabled(on)
         if config.load_conf()["hibernate_minimize"] != value:
             config.conf_set(config.CONF, "hibernate_minimize", value)
-            self.app.status("Minimize windows before hibernating: %s" % ("on" if on else "off"))
+            self.app.status("Minimize windows when hibernation would be refused: %s" % ("on" if on else "off"))
+
+    def set_hibernate_wait(self, seconds):
+        if config.load_conf()["hibernate_minimize_wait"] != str(seconds):
+            config.conf_set(config.CONF, "hibernate_minimize_wait", str(seconds))
+            self.app.status("Wait after minimizing: %d s" % seconds)
 
     def restore_autosave(self):
         from . import autosave
@@ -507,14 +522,19 @@ class Overview(Page):
                                "Down." % config.load_conf()["autosave_minutes"])
         self.auto_restore.setEnabled(bool(saved))
         self.auto_delete.setEnabled(bool(saved))
-        self.hib_minimize.blockSignals(True)
-        self.hib_minimize.setChecked(config.load_conf()["hibernate_minimize"] == "yes")
-        self.hib_minimize.blockSignals(False)
+        conf = config.load_conf()
+        for w in (self.hib_minimize, self.hib_wait):
+            w.blockSignals(True)
+        self.hib_minimize.setChecked(conf["hibernate_minimize"] == "yes")
+        self.hib_wait.setValue(int(conf["hibernate_minimize_wait"]))
+        self.hib_wait.setEnabled(self.hib_minimize.isChecked())
+        for w in (self.hib_minimize, self.hib_wait):
+            w.blockSignals(False)
         prepare = os.path.exists("/usr/local/sbin/hibernate-prepare") or bool(shutil.which("hibernate-prepare"))
         self.hib_hint.setText(
             "Graphics memory of shown windows stays in RAM and goes into the hibernation image. Minimized, "
-            "a playing video window gives back about 100 MiB after 20-30 s; the windows come back after "
-            "waking. " +
+            "a playing video window gives back about 100 MiB, 20-26 s later (measured): a wait below about "
+            "25 s often frees nothing. The windows come back after waking. " +
             ("hibernate-prepare is installed: it tries this only when the image would not fit otherwise." if prepare else
              "Needs hibernate-prepare, or a sleep hook that runs \"plasma-reopen-windows hibernate "
              "before\" and \"after\"; without one, nothing happens."))

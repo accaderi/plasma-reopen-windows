@@ -401,8 +401,9 @@ A small gain that takes half a minute, so
 [hibernate-prepare](https://github.com/accaderi/msi-bravo15-c7vf-fedora-hibernation-fix)
 asks for it only when the image would not fit otherwise: it minimizes the
 windows, waits, and decides again. They come back after waking, in the same
-order. The setting `hibernate_minimize` (on by default; a tick box on the
-Overview page) allows it.
+order. The setting `hibernate_minimize` (off by default; a tick box on the
+Overview page) allows it; `hibernate_minimize_wait` (15-60 s, default 30) is
+how long it waits. Below about 25 s it often frees nothing.
 
 ```bash
 plasma-reopen-windows hibernate before 30   # minimize, wait at least 30 s and until the memory is freed
@@ -447,7 +448,8 @@ plasma-reopen-windows config set on_login ask
 | `autosave_ask` | yes | Offer the autosave at login. After a session that ended without Save & Shut Down (with on_login = last or ask): one question to bring the windows of the last autosave back. |
 | `profile_load` | unite | What loading a profile does outside the app. For the menu entries "Load profile: NAME" (app menu, or a shortcut, favorite or panel button from "Where to show it") and for profile:NAME at login. unite = like "Unite Screen and Existing": start the profile's apps and windows that are missing and arrange all of them, closing nothing; reload = like "Reload Existing": also close the apps that are not in the profile. Undo works for both. |
 | `when_unsure` | ask | A saved window is not clearly found. When a saved window's title matches none of the open windows, but its app has other windows open (for example a browser window with another tab in front): ask = show a window to choose, per saved window; open = open the saved one again; use = move an open window of that app to its place; skip = leave it out. |
-| `hibernate_minimize` | yes | When hibernation would be refused for memory, minimize the windows first. Graphics memory of shown windows stays in RAM and goes into the hibernation image. Minimized, a playing video window gives back about 100 MiB after 20-30 s (measured on a Radeon). hibernate-prepare tries this only when the image would not fit otherwise; the windows come back after waking, in the same order. |
+| `hibernate_minimize` | no | When hibernation would be refused for memory, minimize the windows first. Graphics memory of shown windows stays in RAM and goes into the hibernation image. Minimized, a playing video window gives back about 100 MiB after 20-30 s (measured on a Radeon). hibernate-prepare tries this only when the image would not fit otherwise; the windows come back after waking, in the same order. |
+| `hibernate_minimize_wait` | 30 | Seconds to wait after minimizing. Longer if the memory is still shrinking (up to 10 s more). Chrome gave a minimized video's memory back only 20-26 s later (measured): below about 25 s it often frees nothing. |
 
 Change settings in the file, or with
 `plasma-reopen-windows config set NAME VALUE` (keeps the comments; checks the

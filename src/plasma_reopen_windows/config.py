@@ -115,13 +115,18 @@ SETTINGS = [
               "front): ask = show a window to choose, per saved window; open = open the "
               "saved one again; use = move an open window of that app to its place; "
               "skip = leave it out."),
-    dict(key="hibernate_minimize", default="yes", type="bool", section="Hibernation",
+    dict(key="hibernate_minimize", default="no", type="bool", section="Hibernation",
          label="When hibernation would be refused for memory, minimize the windows first",
          help="Graphics memory of shown windows stays in RAM and goes into the hibernation "
               "image. Minimized, a playing video window gives back about 100 MiB after 20-30 s "
               "(measured on a Radeon). hibernate-prepare tries this only when the image would "
               "not fit otherwise; the windows come back after waking, in the same order.",
-         when="you do not want the windows to disappear while hibernation starts."),
+         when="hibernations are refused because of memory, and you can wait half a minute."),
+    dict(key="hibernate_minimize_wait", default="30", type="int", min=15, max=60, section="Hibernation",
+         label="Seconds to wait after minimizing",
+         help="Longer if the memory is still shrinking (up to 10 s more). Chrome gave a minimized "
+              "video's memory back only 20-26 s later (measured): below about 25 s it often "
+              "frees nothing."),
 ]
 
 

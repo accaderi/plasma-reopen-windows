@@ -10,8 +10,9 @@ half a minute, so hibernate-prepare asks for it only when the image would not
 fit otherwise.
 
   hibernate before [S]  minimize every window that is shown, remember them,
-                        and wait at least S seconds (default 15) and until the
-                        graphics memory stops shrinking
+                        and wait at least S seconds (default: the setting
+                        hibernate_minimize_wait) and until the graphics
+                        memory stops shrinking
   hibernate after       show the same windows again, in the same order
 """
 
@@ -23,12 +24,12 @@ from .config import CFG, STATE_DIR, log
 from .kwin import JS_MINIMIZE, JS_RAISE, KWin
 
 SAVED = os.path.join(STATE_DIR, "hibernate-minimized.json")
-# The memory comes back in steps with pauses of 3-7 s between them (measured:
-# 9 s and 16 s after minimizing), so: at least SETTLE_MIN, then until it has
-# not shrunk for SETTLE_STEADY, at most SETTLE_MAX seconds.
-SETTLE_MIN = 15
+# The memory comes back in steps, 20-26 s after minimizing (measured), so: at
+# least the set wait, then until it has not shrunk for SETTLE_STEADY seconds,
+# at most SETTLE_MORE seconds longer.
+SETTLE_MIN = 30           # without a setting
 SETTLE_STEADY = 5
-SETTLE_MAX = 25
+SETTLE_MORE = 10
 
 
 def gtt_mib():
@@ -57,10 +58,10 @@ def settle(read=gtt_mib, clock=time.time, sleep=time.sleep, start=None, least=No
     if start is None:
         sleep(5)
         return None, None
-    least = SETTLE_MIN if least is None else least
+    least = int(CFG.get("hibernate_minimize_wait") or SETTLE_MIN) if least is None else least
     begin = clock()
     TRACE[:] = [start]
-    lowest, since, end = start, begin, begin + max(SETTLE_MAX, least + 10)
+    lowest, since, end = start, begin, begin + least + SETTLE_MORE
     while clock() < end and (clock() - begin < least or clock() - since < SETTLE_STEADY):
         sleep(1)
         now = read()

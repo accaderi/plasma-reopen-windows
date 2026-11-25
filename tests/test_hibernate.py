@@ -28,20 +28,21 @@ class TestSettle(unittest.TestCase):
         c = Clock()
         steps = [1675, 1675, 1510, 1510, 1502, 1502, 1502, 1523, 1550] + [1443] * 7 + [1396] * 20
         values = iter(steps)
-        start, end = hibernate.settle(lambda: next(values), c, c.sleep)
+        start, end = hibernate.settle(lambda: next(values), c, c.sleep, least=15)
         self.assertEqual((start, end), (1675, 1396))
-        self.assertLess(c.t, hibernate.SETTLE_MAX)
+        self.assertLess(c.t, 15 + hibernate.SETTLE_MORE)
 
-    def test_at_least_the_minimum(self):
+    def test_at_least_the_setting(self):
         c = Clock()
-        hibernate.settle(lambda: 1300, c, c.sleep)      # nothing to free
-        self.assertEqual(c.t, hibernate.SETTLE_MIN)
+        with mock.patch.dict(config.CFG, {"hibernate_minimize_wait": "40"}):
+            hibernate.settle(lambda: 1300, c, c.sleep)  # nothing to free
+        self.assertEqual(c.t, 40)
 
     def test_gives_up_after_the_limit(self):
         c = Clock()
         n = iter(range(5000, 0, -10))                 # keeps shrinking
-        hibernate.settle(lambda: next(n), c, c.sleep)
-        self.assertEqual(c.t, hibernate.SETTLE_MAX)
+        hibernate.settle(lambda: next(n), c, c.sleep, least=30)
+        self.assertEqual(c.t, 30 + hibernate.SETTLE_MORE)
 
     def test_without_a_reading(self):
         c = Clock()
