@@ -171,6 +171,17 @@ result(0);
 """
 
 
+JS_MINIMIZE = r"""
+const ids = %s;
+const on = %s;       // true: minimize, false: show again
+let n = 0;
+for (const w of workspace.windowList()) {
+    if (ids.indexOf(w.internalId.toString()) >= 0 && w.minimized != on) { w.minimized = on; n++; }
+}
+result(n);
+"""
+
+
 JS_ACTIVATE = r"""
 // make one window the active one (a browser adds pages to its active window)
 let ok = false;

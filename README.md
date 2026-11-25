@@ -23,13 +23,14 @@ Adds entries to the app menu: **Save & Shut Down**, **Save & Restart** and
 8. [Profiles](#profiles)
 9. [Autosave](#autosave)
 10. [Save & Update & Restart](#save--update--restart)
-11. [At login](#at-login)
-12. [Settings](#settings)
-13. [How it works](#how-it-works)
-14. [Troubleshooting](#troubleshooting)
-15. [Uninstall](#uninstall)
-16. [Development](#development)
-17. [License](#license)
+11. [Hibernation](#hibernation)
+12. [At login](#at-login)
+13. [Settings](#settings)
+14. [How it works](#how-it-works)
+15. [Troubleshooting](#troubleshooting)
+16. [Uninstall](#uninstall)
+17. [Development](#development)
+18. [License](#license)
 
 ---
 
@@ -387,6 +388,28 @@ plasma-reopen-windows update
 pkcon offline-get-prepared      # what is downloaded and waiting
 ```
 
+## Hibernation
+
+When the computer hibernates, the graphics memory of every shown window stays
+in RAM and goes into the hibernation image; it cannot be moved to swap first.
+On a graphics chip that shares the RAM (Radeon, Intel) that is a lot: a
+maximized video on a 4K screen held about 300 MiB (measured; KWin draws every
+screen on the chip that drives the built-in one, external monitors included).
+Minimized, a window gives most of it back within about 10 s.
+
+So, with the setting `hibernate_minimize` (on by default; a tick box on the
+Overview page), the shown windows are minimized before hibernating and come
+back after waking, in the same order:
+
+```bash
+plasma-reopen-windows hibernate before   # minimize, wait until the memory is freed
+plasma-reopen-windows hibernate after    # show the same windows again
+```
+
+[hibernate-prepare](https://github.com/accaderi/msi-bravo15-c7vf-fedora-hibernation-fix)
+runs these by itself. Without it, a systemd sleep hook can run them as your
+user before and after hibernating.
+
 ## At login
 
 What comes back is the setting `on_login`:
@@ -425,6 +448,7 @@ plasma-reopen-windows config set on_login ask
 | `autosave_ask` | yes | Offer the autosave at login. After a session that ended without Save & Shut Down (with on_login = last or ask): one question to bring the windows of the last autosave back. |
 | `profile_load` | unite | What loading a profile does outside the app. For the menu entries "Load profile: NAME" (app menu, or a shortcut, favorite or panel button from "Where to show it") and for profile:NAME at login. unite = like "Unite Screen and Existing": start the profile's apps and windows that are missing and arrange all of them, closing nothing; reload = like "Reload Existing": also close the apps that are not in the profile. Undo works for both. |
 | `when_unsure` | ask | A saved window is not clearly found. When a saved window's title matches none of the open windows, but its app has other windows open (for example a browser window with another tab in front): ask = show a window to choose, per saved window; open = open the saved one again; use = move an open window of that app to its place; skip = leave it out. |
+| `hibernate_minimize` | yes | Minimize windows before hibernating. Graphics memory of visible windows stays in RAM and makes the hibernation image bigger (a maximized video on a 4K screen: about 300 MiB on a Radeon, measured). Minimized, it is freed within about 10 s. The windows come back after waking, in the same order. Used when hibernate-prepare (or your own sleep hook) runs "plasma-reopen-windows hibernate before / after". |
 
 Change settings in the file, or with
 `plasma-reopen-windows config set NAME VALUE` (keeps the comments; checks the

@@ -20,6 +20,9 @@ they were. This tool does it the other way round:
             import (see: plasma-reopen-windows profile help)
   autosave  the open windows every while (the timer runs this); autosave now,
             autosave list, autosave restore [1|2|ask], autosave delete
+  hibernate before / after   minimize the shown windows before hibernating (frees
+            graphics memory), show them again after waking (setting
+            hibernate_minimize; hibernate-prepare runs these)
   status    show what is saved, change nothing
   windows   list the open windows as this tool sees them
   config    show the settings; config set NAME VALUE, config reset NAME,
@@ -335,6 +338,9 @@ def main():
                 print("nothing saved")
         elif cmd == "autosave":
             do_autosave(sys.argv[2:])
+        elif cmd == "hibernate" and sys.argv[2:3] in (["before"], ["after"]):
+            from . import hibernate
+            (hibernate.before if sys.argv[2] == "before" else hibernate.after)()
         elif cmd == "front":                 # used by the settings app: show its window
             front(show=True)
         elif cmd == "config":

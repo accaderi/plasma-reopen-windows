@@ -455,7 +455,21 @@ class Overview(Page):
         self.auto_hint = hint("")
         bl.addWidget(self.auto_hint)
         v.addWidget(box)
+        box = QGroupBox("Hibernation")
+        bl = QVBoxLayout(box)
+        self.hib_minimize = QCheckBox("Minimize windows before hibernating, show them again after waking")
+        self.hib_minimize.toggled.connect(self.set_hibernate_minimize)
+        bl.addWidget(self.hib_minimize)
+        self.hib_hint = hint("")
+        bl.addWidget(self.hib_hint)
+        v.addWidget(box)
         v.addStretch()
+
+    def set_hibernate_minimize(self, on):
+        value = "yes" if on else "no"
+        if config.load_conf()["hibernate_minimize"] != value:
+            config.conf_set(config.CONF, "hibernate_minimize", value)
+            self.app.status("Minimize windows before hibernating: %s" % ("on" if on else "off"))
 
     def restore_autosave(self):
         from . import autosave
@@ -493,6 +507,16 @@ class Overview(Page):
                                "Down." % config.load_conf()["autosave_minutes"])
         self.auto_restore.setEnabled(bool(saved))
         self.auto_delete.setEnabled(bool(saved))
+        self.hib_minimize.blockSignals(True)
+        self.hib_minimize.setChecked(config.load_conf()["hibernate_minimize"] == "yes")
+        self.hib_minimize.blockSignals(False)
+        prepare = os.path.exists("/usr/local/sbin/hibernate-prepare") or bool(shutil.which("hibernate-prepare"))
+        self.hib_hint.setText(
+            "Graphics memory of shown windows stays in RAM and makes the hibernation image bigger; a "
+            "maximized video on a 4K screen costs about 300 MiB. Minimized, it is freed within about 10 s. " +
+            ("hibernate-prepare is installed and does this before each hibernation." if prepare else
+             "Needs hibernate-prepare, or a sleep hook that runs \"plasma-reopen-windows hibernate "
+             "before\" and \"after\"; without one, nothing happens."))
         data, what = read_session()
         if not data:
             self.info.setText("Nothing saved yet.")
