@@ -69,6 +69,43 @@ class TestCopies(unittest.TestCase):
         self.assertIsNone(bc.take({"apps": [{"app": "org.kde.konsole", "launch": {}}]}, "s1"))
         self.assertFalse(os.path.exists(os.path.join(bc.COPIES, "s1")))
 
+    def prefs(self, exit_type):
+        import json
+        write(os.path.join(self.chrome, "Default", "Preferences"),
+              json.dumps({"profile": {"exit_type": exit_type, "name": "x"}, "other": 1}).encode())
+
+    def exit_type(self):
+        import json
+        with open(os.path.join(self.chrome, "Default", "Preferences")) as f:
+            return json.load(f)["profile"]["exit_type"]
+
+    def test_after_a_crash_the_newer_own_session_is_kept(self):
+        """A freeze after the autosave: Chrome's own session (written up to the
+        freeze) is newer and complete; it is kept, and the profile is marked
+        closed properly so Chrome restores it instead of a New Tab window."""
+        r = bc.take(self.p, "%d" % ((time.time() - 600) * 1000))      # the autosave, 10 minutes ago
+        write(os.path.join(self.sess, "Session_3"), b"up to the freeze")
+        self.prefs("Crashed")
+        done = bc.put_back(r, {"google-chrome"}, newer_wins=True)
+        self.assertEqual(done, {"google-chrome"})
+        self.assertEqual(read(os.path.join(self.sess, "Session_3")), b"up to the freeze")
+        self.assertEqual(self.exit_type(), "Normal")
+
+    def test_closed_normally_the_copy_goes_back_and_profile_clean(self):
+        r = bc.take(self.p, "%d" % ((time.time() - 600) * 1000))
+        write(os.path.join(self.sess, "Session_3"), b"one window")      # a window-by-window close
+        self.prefs("Normal")
+        bc.put_back(r, {"google-chrome"}, newer_wins=True)
+        self.assertFalse(os.path.exists(os.path.join(self.sess, "Session_3")))
+
+    def test_a_profile_load_puts_its_copy_back_even_after_a_crash(self):
+        r = bc.take(self.p, "%d" % ((time.time() - 600) * 1000))
+        write(os.path.join(self.sess, "Session_3"), b"up to the freeze")
+        self.prefs("Crashed")
+        bc.put_back(r, {"google-chrome"})                              # a named profile
+        self.assertEqual(read(os.path.join(self.sess, "Session_2")), b"all windows")
+        self.assertEqual(self.exit_type(), "Normal")
+
     def test_put_back_after_a_window_by_window_close(self):
         r = bc.take(self.p, "s1")
         # the normal shut down: Chrome wrote a new file with one window left

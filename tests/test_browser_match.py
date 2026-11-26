@@ -97,6 +97,17 @@ class TestPlacer(unittest.TestCase):
         placer.step()
         self.assertEqual(len(placer.matched), 1)     # then the remaining one, as before
 
+    def test_new_tab_window_not_taken_for_a_saved_one(self):
+        """Chrome after a crash opens a New Tab window: it has no pages, so it
+        is never the saved window with pages (measured 2026-11-26: it was taken
+        for one by elimination, and that window's 17 pages never came back)."""
+        self.kw.windows.return_value["windows"][0]["caption"] = "New Tab - Google Chrome"
+        self.file = [{"title": "New Tab", "urls": [], "active": 0}]
+        placer = session.Placer(self.kw, {"windows": [SHOP]}, set(), move=set())
+        for _ in range(15):
+            placer.step()
+        self.assertEqual(placer.matched, [])
+
     def test_lost_window_found(self):
         placer = session.Placer(self.kw, {"windows": [SHOP, MUSIC]}, set(), move=set())
         self.file = [{"title": "Music", "urls": MUSIC["urls"], "active": 0}]

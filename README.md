@@ -101,7 +101,10 @@ number of apps is fine. The practical limits:
   app that asks "save changes?" stops the shutdown until you answer.
 - A program still running in a Konsole tab stops the shutdown too, on purpose.
 - After login the tool waits up to 2 minutes for windows (`restore_timeout`);
-  a window that takes longer appears, but is not placed.
+  a window that takes longer appears, but is not placed. It stops waiting
+  much sooner when nothing more is coming: 20 s after the last window
+  appeared, a saved video whose tab does not show up 30 s after it, and the
+  sound output at most 20 s after both.
 - Apps without a menu entry (some AppImages, scripts) are not started again.
 - Never touched, so never saved, closed, moved or started again: the parts
   of Plasma itself (panels, KRunner, KWin, the password wallet, Spectacle,
@@ -351,6 +354,16 @@ would come back).
 - The **last two** are kept: a snapshot taken while a normal shutdown was
   closing the apps is half empty, and the one before it is the good one.
   Switching autosave off keeps them.
+- **Saved sooner when it matters**, always into the newest autosave (only
+  the 30-minute interval moves the newest one to the earlier place, so a few
+  quick changes never push out the earlier one):
+  - an app was opened or closed: at the next timer run (within 5 minutes),
+    not after the interval;
+  - right after a Unite, Reload, Arrange or a restore at login;
+  - right before a hibernation, when the hibernation fix
+    ([msi-bravo15-c7vf-fedora-hibernation](https://github.com/accaderi/msi-bravo15-c7vf-fedora-hibernation))
+    is installed: should the hibernation or the resume fail, the autosave
+    offered at the next login is what was open a moment before.
 - No snapshot is taken while a load or restore is running.
 - At login, after a session that did not end with Save & Shut Down, one
   question offers them (setting `autosave_ask`; once per snapshot).
@@ -364,6 +377,12 @@ would come back).
   `~/.local/state/plasma-reopen-windows/browser-sessions/replaced/`, never
   deleted; a browser that is already running is left alone (its missing
   windows open from their page addresses).
+- **After a freeze or a long press**, Chrome's own session was written up to
+  that moment and is newer than the autosave's copy: then Chrome's own is
+  kept, not the copy. Either way the profile is marked as closed properly
+  first, because after a crash Chrome restores nothing by itself: it opens an
+  empty New Tab window and only offers "Restore pages?". An empty window
+  like that is never taken for a saved window that had pages.
 - Not in an autosave: unsaved work and terminal output (only hibernation
   keeps those).
 
@@ -373,6 +392,9 @@ plasma-reopen-windows autosave list           # 1 = newest, 2 = earlier
 plasma-reopen-windows autosave restore 2      # bring back the earlier one
 plasma-reopen-windows autosave delete
 ```
+
+`plasma-reopen-windows hibernate save` saves into the newest autosave
+without a notification (the hibernation fix runs it).
 
 A user timer looks every 5 minutes whether one is due
 (`systemctl --user status plasma-reopen-windows-autosave.timer`).

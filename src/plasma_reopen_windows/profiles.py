@@ -406,7 +406,7 @@ def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None
         # an autosave: browsers about to start get their own session of then back
         if p.get("browser_sessions"):
             from .browser_copy import put_back
-            back = put_back(p["browser_sessions"], started)
+            back = put_back(p["browser_sessions"], started, newer_wins=bool(p.get("auto")))
             for l in launches:
                 if l["app"] in back:
                     l["restore_session"] = True
@@ -466,6 +466,8 @@ def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None
     head = title or "%s %s" % (TITLES[mode], p["name"])
     log("%s: %s" % (head, text))
     notify(head, text)
+    from . import autosave
+    autosave.after("after " + head)
     return True
 
 

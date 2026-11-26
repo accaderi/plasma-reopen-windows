@@ -140,9 +140,56 @@ def _move_away(app, paths):
             shutil.move(path, os.path.join(dest, "%d-%s" % (n, os.path.basename(path))))
 
 
-def put_back(record, apps):
+def chrome_profile(f):
+    """The profile folder of a Chrome session file (.../Default/Sessions/x)."""
+    return os.path.dirname(os.path.dirname(f["to"]))
+
+
+def crashed(profile):
+    """Chrome did not close this profile properly (a freeze, a long press):
+    then it opens a New Tab window and only offers "Restore pages?", whatever
+    its startup setting and --restore-last-session (measured 2026-11-26)."""
+    try:
+        with open(os.path.join(profile, "Preferences")) as f:
+            return json.load(f).get("profile", {}).get("exit_type") == "Crashed"
+    except (OSError, ValueError):
+        return False
+
+
+def mark_clean(profile):
+    """Mark a Chrome profile as closed properly, so it restores its session."""
+    path = os.path.join(profile, "Preferences")
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        prof = data.setdefault("profile", {})
+        if prof.get("exit_type") == "Normal" and prof.get("exited_cleanly", True):
+            return
+        prof["exit_type"] = "Normal"
+        prof["exited_cleanly"] = True
+        with open(path + ".prw", "w") as f:
+            json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
+        os.replace(path + ".prw", path)
+    except (OSError, ValueError) as e:
+        log("could not mark %s as closed properly: %s" % (profile, e))
+
+
+def own_is_newer(record, files):
+    """After a crash, the browser's own session files are newer than this
+    copy: they hold what was open up to the crash, more than the copy."""
+    taken = int(record["dir"]) / 1000 if record["dir"].isdigit() else time.time()
+    for d in sorted({os.path.dirname(f["to"]) for f in files}):
+        own = _newest(os.path.join(d, "Session_*"))
+        if own and os.path.getmtime(own) > taken + 5 and crashed(os.path.dirname(d)):
+            return own
+    return None
+
+
+def put_back(record, apps, newer_wins=False):
     """Put the copied session files of these browser apps back (only those not
-    running). Returns the apps done."""
+    running). newer_wins (an autosave): a Chrome that crashed after the copy
+    was taken keeps its own, newer session. Chrome profiles are marked as
+    closed properly either way. Returns the apps done."""
     done = set()
     for app in sorted(set(apps) & set((record or {}).get("apps", {}))):
         files = record["apps"][app]
@@ -153,8 +200,21 @@ def put_back(record, apps):
         if browser_running(app, files):
             log("%s is running: its session is left as it is" % app)
             continue
+        if app in CHROME_DIRS and newer_wins:
+            own = own_is_newer(record, files)
+            if own:
+                for prof in sorted({chrome_profile(f) for f in files}):
+                    mark_clean(prof)
+                log("%s: its own session (%s) is newer than the autosave's (%s), it was not closed "
+                    "properly: kept, and restored" % (
+                        app, time.strftime("%H:%M", time.localtime(os.path.getmtime(own))),
+                        time.strftime("%H:%M", time.localtime(int(record["dir"]) / 1000))))
+                done.add(app)
+                continue
         try:
             if app in CHROME_DIRS:
+                for prof in sorted({chrome_profile(f) for f in files}):
+                    mark_clean(prof)
                 folders = sorted({os.path.dirname(f["to"]) for f in files})
                 _move_away(app, [x for d in folders for k in ("Session_*", "Tabs_*")
                                  for x in glob.glob(os.path.join(d, k))])
@@ -172,7 +232,7 @@ def put_back(record, apps):
         except (OSError, ValueError) as e:
             log("%s: could not put its session back: %s" % (app, e))
             continue
-        log("%s: session of the autosave put back (%d files; replaced ones in %s)"
+        log("%s: saved session put back (%d files; replaced ones in %s)"
             % (app, len(files), os.path.join(REPLACED, app)))
         done.add(app)
     return done

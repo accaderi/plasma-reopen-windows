@@ -20,6 +20,8 @@ they were. This tool does it the other way round:
             import (see: plasma-reopen-windows profile help)
   autosave  the open windows every while (the timer runs this); autosave now,
             autosave list, autosave restore [1|2|ask], autosave delete
+  hibernate save   autosave now (hibernate-prepare runs it first: a failed
+            hibernation loses nothing that was open)
   hibernate before [S] / after   minimize the shown windows (frees some graphics
             memory, waits at least S s), show them again after waking (setting
             hibernate_minimize; hibernate-prepare runs these when the image
@@ -339,6 +341,12 @@ def main():
                 print("nothing saved")
         elif cmd == "autosave":
             do_autosave(sys.argv[2:])
+        elif cmd == "hibernate" and sys.argv[2:3] == ["save"]:
+            # hibernate-prepare runs this first: if the hibernation fails, the
+            # autosave offered at the next login is what was open just now
+            from . import autosave
+            p = autosave.after("before hibernation")
+            print("saved: %s" % autosave.describe(p) if p else "saved: unchanged")
         elif cmd == "hibernate" and sys.argv[2:3] in (["before"], ["after"]):
             from . import hibernate
             if sys.argv[2] == "before":

@@ -102,6 +102,34 @@ class TestAutosave(unittest.TestCase):
         self.assertIsNotNone(self.take([win("B")]))
         self.assertIsNotNone(self.take([win("C")], manual=True))       # Save now: always
 
+    def test_app_opened_saved_at_once_in_place(self):
+        """Within the interval: an app opened or closed is saved at the next
+        timer run, into the newest slot; the earlier one is not pushed out."""
+        self.take([win("old")], manual=True)
+        self.take([win("A")], manual=True)                             # slots: A, old
+        konsole = {"app": "org.kde.konsole"}
+        with mock.patch.object(autosave, "apps_changed", return_value=True):
+            self.assertIsNotNone(self.take([win("A"), dict(win("K"), **konsole)]))
+        self.assertEqual(len(autosave.read(0)["windows"]), 2)
+        self.assertEqual(autosave.read(1)["windows"][0]["caption"], "old")
+        with mock.patch.object(autosave, "apps_changed", return_value=False):
+            self.assertIsNone(self.take([win("B")]))                   # only moved: waits for the interval
+
+    def test_after_an_action_in_place_unless_due(self):
+        self.take([win("old")], manual=True)
+        self.take([win("A")], manual=True)
+        with mock.patch("plasma_reopen_windows.kwin.KWin"), \
+                mock.patch("plasma_reopen_windows.session.snapshot", return_value={}), \
+                mock.patch("plasma_reopen_windows.profiles.build",
+                           return_value={"name": "Autosave", "apps": [], "windows": [win("U")]}):
+            self.assertIsNotNone(autosave.after("before hibernation"))
+            self.assertEqual(autosave.read(1)["windows"][0]["caption"], "old")
+            os.utime(autosave.CHECKED, (time.time() - 3600, time.time() - 3600))
+            with mock.patch("plasma_reopen_windows.profiles.build",
+                            return_value={"name": "Autosave", "apps": [], "windows": [win("V")]}):
+                autosave.after("after Unite Test")                     # due: the newest moves down
+            self.assertEqual(autosave.read(1)["windows"][0]["caption"], "U")
+
     def test_offered_once_and_not_when_old(self):
         p = self.take([win("A")], manual=True)
         self.assertEqual(len(autosave.to_offer()), 1)

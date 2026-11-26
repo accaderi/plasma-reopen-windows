@@ -229,6 +229,8 @@ def do_restore(state=None):
     bring_back(kw, state["launch"], state["windows"], before, placement_for(state),
                media_items=state.get("media", []), sound=state.get("sound"), pause_unknown=True, login=True)
     notify("Session restored", "%d apps started again" % len(state["launch"]))
+    from . import autosave
+    autosave.after("after the restore at login")
 
 
 def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=None,
@@ -254,6 +256,7 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
         relaunch(launches, kw)
         unmute_at = time.time() + 30      # counted from when all apps are started
         sound_until = time.time() + 20
+        started = time.time()
         watch_until = time.time() + watch if unknown else 0
         quiet_until = time.time() + min(watch, 12) if unknown and launches else 0   # they start within seconds
         placer = Placer(kw, {"windows": windows}, set(ignore_ids), move=move, strict_ids=strict_ids, fixed=fixed)
@@ -270,17 +273,22 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
                 unmute_outputs(muted)
                 muted, muting = [], False
             placer.step()
-            report_wait(placer, media, len(windows) + len(fixed or {}), end, settle, unmute_at if muting else 0,
-                        watch_until)
-            # done, or no further window for a while (an app may open fewer windows)
+            # A saved video whose tab never appears (Chrome loads a window's
+            # other tabs only when they are shown) is waited for until 30 s
+            # after the last window appeared, not the whole time limit
+            # (measured 2026-11-25: a Reload waited 2 minutes for one)
+            media_until = max(placer.last_match, started) + MEDIA_WAIT
+            media_waits = bool(media.todo) and time.time() < media_until
+            report_wait(placer, media, len(windows) + len(fixed or {}), end, settle,
+                        unmute_at if muting else 0, watch_until, media_until)
+            windows_done = not placer.todo or time.time() - placer.last_match > settle
             # the sound output's monitor may still be waking up, but it is not
             # waited for longer than the windows and videos need, plus 20 s
-            if sound and time.time() > sound_until and not media.todo and \
-                    (not placer.todo or time.time() - placer.last_match > settle):
+            if sound and time.time() > sound_until and not media_waits and windows_done:
                 set_sound_output(sound, final=True)
                 sound = None
-            if not sound and not media.todo and time.time() > watch_until and \
-                    (not placer.todo or time.time() - placer.last_match > settle):
+            # done, or no further window for a while (an app may open fewer windows)
+            if not sound and not media_waits and time.time() > watch_until and windows_done:
                 break
             time.sleep(1.5 if launches else 0.4)
         if login:
@@ -298,6 +306,9 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
             time.sleep(2 if launches else 0.3)    # let other scripts finish placing windows first
             placer.restack()
     return placer
+
+
+MEDIA_WAIT = 30      # seconds after the last window appeared that a missing video is waited for
 
 
 def reopen_lost(kw, placer, launches, wait=30):
@@ -325,13 +336,16 @@ def reopen_lost(kw, placer, launches, wait=30):
         time.sleep(1)
 
 
-def report_wait(placer, media, total, end, settle, unmute_at, watch_until):
+def report_wait(placer, media, total, end, settle, unmute_at, watch_until, media_until=0):
     """What bring_back is waiting for, for the settings app's progress bar."""
     now = time.time()
     placed = len(placer.matched)
-    if media.todo:
+    if media.todo and unmute_at:
         progress("putting %d video%s back at its place (sound off meanwhile)" % (
-            len(media.todo), "s" if len(media.todo) > 1 else ""), until=unmute_at or None)
+            len(media.todo), "s" if len(media.todo) > 1 else ""), until=unmute_at)
+    elif media.todo and media_until > now:
+        progress("waiting for %d video%s to appear" % (len(media.todo), "s" if len(media.todo) > 1 else ""),
+                 until=media_until)
     elif placer.todo:
         progress("waiting for windows: %d of %d in place" % (placed, total), placed, total,
                  until=min(end, placer.last_match + settle))
@@ -382,8 +396,10 @@ class Placer:
         if not any(c.get("urls") for c in cands):
             return 0.0, 0, None
         urls = self.pages_now(w, cache)
-        if not urls:
+        if urls is None:
             return 0.0, 0, None
+        if not urls:                     # known to have no pages (a New Tab window)
+            return 0.0, 0, []
         return max((tab_overlap(c.get("urls", []), urls), i) for i, c in enumerate(cands)) + (urls,)
 
     def step(self):

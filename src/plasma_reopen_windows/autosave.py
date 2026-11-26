@@ -109,11 +109,31 @@ def keep(p):
     os.replace(tmp, SLOTS[0])
 
 
-def take(manual=False):
-    """Take a snapshot. From the timer only when switched on, due, and no load
-    is running. Returns the snapshot written, or None."""
+def apps_changed():
+    """An app was opened or closed since the newest autosave (then the timer
+    saves at once, not after the interval: measured 2026-11-25, apps started
+    by a Unite were lost in a crash 13 minutes later, the next autosave was
+    still 10 minutes away)."""
+    newest = read(0)
+    if not newest:
+        return True
+    from .apps import ignored
+    from .kwin import KWin
+    now = {w["app"] for w in KWin().windows()["windows"] if not ignored(w["app"])}
+    return bool(now) and now != {w["app"] for w in newest.get("windows", [])}
+
+
+def take(manual=False, why=None):
+    """Take a snapshot. From the timer only when switched on, due (or an app
+    was opened or closed), and no load is running. Returns the snapshot
+    written, or None."""
+    # The interval moves the newest snapshot to the earlier slot; a save in
+    # between (an app opened or closed, after a Unite, before a hibernation)
+    # updates the newest in place, so the earlier one is not pushed out by a
+    # few quick changes (Save Windows Now always keeps the one before)
+    rotate = due() or (manual and not why)
     if not manual:
-        if CFG.get("autosave") != "yes" or not due() or busy():
+        if CFG.get("autosave") != "yes" or busy() or not (rotate or apps_changed()):
             return None
     from .kwin import KWin
     from .profiles import build
@@ -122,8 +142,9 @@ def take(manual=False):
     p = build("Autosave", snapshot(KWin()), auto=True)
     p["saved"] = time.time()
     os.makedirs(STATE_DIR, exist_ok=True)
-    with open(CHECKED, "w") as f:
-        f.write(str(int(p["saved"])))
+    if rotate:                           # the interval counts from here
+        with open(CHECKED, "w") as f:
+            f.write(str(int(p["saved"])))
     if not p["windows"]:
         log("autosave: no windows open, nothing saved")
         return None
@@ -142,10 +163,25 @@ def take(manual=False):
         return None
     if copies:
         p["browser_sessions"] = copies
-    keep(p)
+    if rotate or not newest:
+        keep(p)
+    else:
+        write_slot(0, p)
     browser_copy.clean_all()
-    log("autosave%s: %s" % (" (Save now)" if manual else "", describe(p)))
+    log("autosave%s: %s" % (" (%s)" % why if why else " (Save now)" if manual else "", describe(p)))
     return p
+
+
+def after(why):
+    """Right after this tool changed the windows (Unite, Reload, a restore),
+    or before a hibernation: saved now, not at the next interval."""
+    if CFG.get("autosave") != "yes":
+        return None
+    try:
+        return take(manual=True, why=why)
+    except Exception as e:               # never spoils what it follows
+        log("autosave (%s) skipped: %s" % (why, e))
+        return None
 
 
 def write_slot(slot, p):
