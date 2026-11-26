@@ -131,7 +131,10 @@ def take(manual=False, why=None):
     # between (an app opened or closed, after a Unite, before a hibernation)
     # updates the newest in place, so the earlier one is not pushed out by a
     # few quick changes (Save Windows Now always keeps the one before)
-    rotate = due() or (manual and not why)
+    # The newest one offered at login (what was open before a crash) is
+    # never written over: the first save after it moves it to the earlier
+    # slot (measured 2026-11-26: the save after its restore replaced it)
+    rotate = due() or (manual and not why) or was_offered(read(0))
     if not manual:
         if CFG.get("autosave") != "yes" or busy() or not (rotate or apps_changed()):
             return None
@@ -150,6 +153,9 @@ def take(manual=False, why=None):
         return None
     newest = read(0)
     copies = browser_copy.take(p)
+    if newest and fingerprint(newest) == fingerprint(p) and was_offered(newest):
+        browser_copy.clean_all()         # the one offered at login stays exactly as it was
+        return None
     if newest and fingerprint(newest) == fingerprint(p):
         # same windows: the newest is brought up to date in place (videos,
         # browser sessions: they change without the windows), the earlier one
@@ -212,6 +218,15 @@ def restore(slot=0):
 
 
 # ---- at login -------------------------------------------------------------------------
+def was_offered(p):
+    """This snapshot was offered at login."""
+    try:
+        with open(OFFERED) as f:
+            return bool(p) and f.read().strip() == str(int(p.get("saved", 0)))
+    except OSError:
+        return False
+
+
 def to_offer(now=None):
     """The snapshots to offer at login (newest first), or [] (pure on the files):
     only when asking is on, the newest is not too old and was not offered yet."""

@@ -130,6 +130,25 @@ class TestAutosave(unittest.TestCase):
                 autosave.after("after Unite Test")                     # due: the newest moves down
             self.assertEqual(autosave.read(1)["windows"][0]["caption"], "U")
 
+    def test_the_one_offered_at_login_is_kept(self):
+        """Restored at login, then saved again: it moves to the earlier slot,
+        it is not written over (measured 2026-11-26)."""
+        self.take([win("old")], manual=True)
+        self.take([win("crash")], manual=True)
+        autosave.offered(autosave.read(0))
+        with mock.patch("plasma_reopen_windows.kwin.KWin"), \
+                mock.patch("plasma_reopen_windows.session.snapshot", return_value={}), \
+                mock.patch("plasma_reopen_windows.profiles.build",
+                           return_value={"name": "Autosave", "apps": [], "windows": [win("crash")]}):
+            self.assertIsNone(autosave.after("after Restore autosave"))   # unchanged: left alone
+            self.assertEqual(autosave.read(1)["windows"][0]["caption"], "old")
+        with mock.patch("plasma_reopen_windows.kwin.KWin"), \
+                mock.patch("plasma_reopen_windows.session.snapshot", return_value={}), \
+                mock.patch("plasma_reopen_windows.profiles.build",
+                           return_value={"name": "Autosave", "apps": [], "windows": [win("restored", x=5)]}):
+            autosave.after("after Restore autosave")
+        self.assertEqual(autosave.read(1)["windows"][0]["caption"], "crash")
+
     def test_offered_once_and_not_when_old(self):
         p = self.take([win("A")], manual=True)
         self.assertEqual(len(autosave.to_offer()), 1)
