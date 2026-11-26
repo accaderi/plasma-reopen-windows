@@ -153,10 +153,12 @@ def take(manual=False, why=None):
         return None
     newest = read(0)
     copies = browser_copy.take(p)
-    if newest and fingerprint(newest) == fingerprint(p) and was_offered(newest):
+    save_now = manual and not why
+    same = bool(newest) and fingerprint(newest) == fingerprint(p)
+    if same and was_offered(newest) and not save_now:
         browser_copy.clean_all()         # the one offered at login stays exactly as it was
         return None
-    if newest and fingerprint(newest) == fingerprint(p):
+    if same and not was_offered(newest):
         # same windows: the newest is brought up to date in place (videos,
         # browser sessions: they change without the windows), the earlier one
         # stays; the time changes only when asked for

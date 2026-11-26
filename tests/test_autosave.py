@@ -149,6 +149,18 @@ class TestAutosave(unittest.TestCase):
             autosave.after("after Restore autosave")
         self.assertEqual(autosave.read(1)["windows"][0]["caption"], "crash")
 
+    def test_save_now_after_the_offered_one(self):
+        """Save Now with the windows unchanged since the restore at login: a
+        new autosave (measured 2026-11-26: it did nothing and showed the old
+        one); the offered one becomes the earlier one."""
+        self.take([win("crash")], manual=True)
+        first = autosave.read(0)["saved"]
+        autosave.offered(autosave.read(0))
+        with mock.patch.object(autosave.time, "time", return_value=first + 600):
+            self.assertIsNotNone(self.take([win("crash")], manual=True))
+        self.assertEqual(autosave.read(0)["saved"], first + 600)
+        self.assertEqual(autosave.read(1)["saved"], first)
+
     def test_offered_once_and_not_when_old(self):
         p = self.take([win("A")], manual=True)
         self.assertEqual(len(autosave.to_offer()), 1)
