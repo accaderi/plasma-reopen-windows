@@ -64,8 +64,9 @@ def ask(has_session, names, timeout, auto=None):
 
 def login():
     try:                            # after Save & Update & Restart: did it install?
-        from .updates import report_result
+        from .updates import new_kernel_note, report_result
         report_result()
+        new_kernel_note()
     except Exception as e:          # never in the way of the restore
         log("update result not read: %s" % e)
     mode = CFG.get("on_login")

@@ -431,6 +431,39 @@ pkcon offline-get-prepared      # what is downloaded and waiting
 pkcon offline-status            # how the last update at a restart went
 ```
 
+### Keeping a kernel that works
+
+A new kernel can break something that worked: on the laptop this was
+developed on, kernel 7.3.4 hung at every resume from hibernation, 7.2.9
+worked. Fedora can keep the working kernel as the one that starts and install
+new ones next to it, to be tried first:
+
+```bash
+sudo sed -i 's/^UPDATEDEFAULT=yes/UPDATEDEFAULT=no/' /etc/sysconfig/kernel   # new kernels do not become the default
+sudo grubby --set-default /boot/vmlinuz-$(uname -r)                          # the one running now starts
+```
+
+and in `/etc/dnf/dnf.conf` `installonly_limit=3`, so a new kernel does not
+push the working one out (each kernel takes about 210 MB of `/boot`).
+
+This tool then helps in two ways:
+
+- **At login**, when a kernel newer than the running one has been installed
+  (by any update), one notification says so, once, with how to try it:
+  restart and choose it in the boot menu (with the hibernation fix: `sudo
+  hibernate-prepare calibrate`, then one real hibernation, choosing it again
+  when starting), and if it works, `sudo grubby --set-default
+  /boot/vmlinuz-VERSION`.
+- **Save & Update & Restart** stops before closing anything when the update
+  would remove a kernel while you choose which kernel starts
+  (`UPDATEDEFAULT=no`): remove one you do not need yourself, or allow one
+  more. With Fedora's normal setting it lets dnf remove the oldest, as usual.
+
+How to try a new kernel step by step, why a test hibernation alone is not
+enough, and how to find which driver hangs:
+[After a kernel or driver update](https://github.com/accaderi/msi-bravo15-c7vf-fedora-hibernation#after-a-kernel-or-driver-update)
+in the hibernation fix's README.
+
 ## Hibernation
 
 When the computer hibernates, the graphics memory of every shown window stays

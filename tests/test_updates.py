@@ -41,6 +41,7 @@ class TestFlow(unittest.TestCase):
              mock.patch.object(updates, "do_restore", side_effect=lambda: self.calls.append("restore")),
              mock.patch.object(updates, "power", side_effect=lambda a: self.calls.append(a)),
              mock.patch.object(updates, "notify"),
+             mock.patch.object(updates, "kernels", return_value=[]),
              mock.patch.object(updates.Note, "show")]
         for x in p:
             x.start()
@@ -197,6 +198,53 @@ class TestResult(unittest.TestCase):
     def test_success(self):
         status, call, _ = self.run_report("Status:\tSuccess\n")
         self.assertEqual(call[0][0], "System updated")
+
+
+class TestKernels(unittest.TestCase):
+    """The user keeps a kernel that works (measured 2026-11-26: 7.3.4 hung at
+    every resume, 7.2.9 works) and tries new ones next to it."""
+    K = ["7.2.9-200.fc44.x86_64", "7.3.4-200.fc44.x86_64"]
+
+    def test_version_order(self):
+        self.assertEqual(sorted(["7.10.1-1.fc44.x86_64", "7.9.3-1.fc44.x86_64"], key=updates.vkey)[0],
+                         "7.9.3-1.fc44.x86_64")
+
+    def test_removed_oldest_never_the_running_one(self):
+        new = ["kernel-core_7.3.5-200.fc44.x86_64", "zlib_1.3.x86_64"]
+        self.assertEqual(updates.kernels_removed(new, self.K, self.K[0], 3), [])
+        self.assertEqual(updates.kernels_removed(new, self.K, self.K[0], 2), [self.K[1]])
+        self.assertEqual(updates.kernels_removed(new, self.K, self.K[1], 2), [self.K[0]])
+        self.assertEqual(updates.kernels_removed(["zlib_1.3.x86_64"], self.K, self.K[0], 2), [])
+
+    def test_update_stops_when_a_kept_kernel_would_go(self):
+        note = mock.MagicMock()
+        with mock.patch.object(updates, "run_pkcon", return_value=(0, [])), \
+                mock.patch.object(updates, "count_updates", return_value=1), \
+                mock.patch.object(updates, "prepared", return_value=["kernel-core_7.3.5-200.fc44.x86_64"]), \
+                mock.patch.object(updates, "kernels", return_value=self.K), \
+                mock.patch.object(updates, "installonly_limit", return_value=2), \
+                mock.patch.object(updates, "boot_short", return_value=None), \
+                mock.patch.object(updates, "notify") as told, mock.patch.object(updates, "log"):
+            with mock.patch.object(updates, "pinned", return_value=True):
+                self.assertIsNone(updates.download(note))
+                self.assertIn("7.3.4", told.call_args[0][1])
+            with mock.patch.object(updates, "pinned", return_value=False):   # Fedora's normal way
+                self.assertEqual(updates.download(note), 1)
+
+    def test_new_kernel_told_once(self):
+        import tempfile
+        told = os.path.join(tempfile.mkdtemp(), "told")
+        installed = list(self.K)
+        with mock.patch.object(updates, "TOLD", told), mock.patch.object(updates, "kernels", side_effect=lambda: installed), \
+                mock.patch.object(updates, "notify") as note, mock.patch.object(updates, "log"), \
+                mock.patch.object(updates, "pinned", return_value=True):
+            run = self.K[0]
+            self.assertIsNone(updates.new_kernel_note(run))     # first run: 7.3.4 is known already
+            installed.append("7.3.5-200.fc44.x86_64")
+            self.assertEqual(updates.new_kernel_note(run), "7.3.5-200.fc44.x86_64")
+            self.assertIn("still starts 7.2.9-200", note.call_args[0][1])
+            self.assertIsNone(updates.new_kernel_note(run))     # once
+            self.assertIsNone(updates.new_kernel_note("7.3.5-200.fc44.x86_64"))   # running it: nothing
 
 
 if __name__ == "__main__":

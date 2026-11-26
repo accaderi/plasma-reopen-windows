@@ -171,9 +171,38 @@ def installonly_limit():
     return limit
 
 
+def vkey(version):
+    """Sort key for kernel versions: 7.10.1 after 7.9.3."""
+    return [(0, int(x), "") if x.isdigit() else (1, 0, x) for x in re.findall(r"\d+|[a-z]+", version)]
+
+
+def kernels():
+    """Installed kernels, oldest first, as uname -r writes them."""
+    r = subprocess.run(["rpm", "-q", "kernel-core", "--qf", "%{VERSION}-%{RELEASE}.%{ARCH}\n"],
+                       capture_output=True, text=True, check=False)
+    return sorted((l.strip() for l in r.stdout.splitlines() if l.strip() and " " not in l.strip()), key=vkey)
+
+
 def installed_kernels():
-    r = subprocess.run(["rpm", "-q", "kernel-core"], capture_output=True, text=True, check=False)
-    return len([l for l in r.stdout.splitlines() if l.startswith("kernel-core-")])
+    return len(kernels())
+
+
+def pinned():
+    """The user chooses which kernel starts: new kernels do not become the
+    default (UPDATEDEFAULT=no in /etc/sysconfig/kernel, Fedora)."""
+    try:
+        with open("/etc/sysconfig/kernel") as f:
+            return any(re.match(r"\s*UPDATEDEFAULT\s*=\s*no\b", l) for l in f)
+    except OSError:
+        return False
+
+
+def kernels_removed(names, installed, running, limit):
+    """The kernels an update with these packages removes: dnf keeps
+    installonly_limit kernels and removes the oldest, never the running one."""
+    new = [n.split("_", 1)[1] for n in names if n.startswith("kernel-core_")]
+    excess = len(installed) + len(new) - limit
+    return [k for k in installed if k != running][:max(0, excess)]
 
 
 def boot_short(names, kernel=None, boot="/boot", kernels=None, limit=None):
@@ -222,6 +251,40 @@ def report_result():
     return status
 
 
+TOLD = os.path.join(STATE_DIR, "kernels-told")    # newer kernels already told about
+
+
+def new_kernel_note(running=None):
+    """At login: a kernel newer than the one running was installed (by an
+    update; with UPDATEDEFAULT=no the computer keeps starting the old one).
+    Told once per kernel, with how to try it. Returns the kernel told about."""
+    running = running or os.uname().release
+    newer = [k for k in kernels() if vkey(k) > vkey(running)]
+    try:
+        with open(TOLD) as f:
+            told = set(f.read().split())
+        first = False
+    except OSError:
+        told, first = set(), True                     # first run: what is there now is known
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(TOLD, "w") as f:
+        f.write("\n".join(sorted(told | set(newer))) + "\n")
+    fresh = [k for k in newer if k not in told]
+    if first or not fresh:
+        return None
+    k = fresh[-1]
+    log("new kernel installed: %s (running %s)" % (k, running))
+    steps = "Restart and choose it in the boot menu"
+    if os.path.exists("/usr/local/sbin/hibernate-prepare"):
+        steps += ("; run \"sudo hibernate-prepare calibrate\", then hibernate once and choose it again "
+                  "when starting")
+    notify("New kernel %s installed" % k.split(".fc")[0],
+           "This computer still starts %s%s. To try the new one: %s. If it works: "
+           "sudo grubby --set-default /boot/vmlinuz-%s" % (
+               running.split(".fc")[0], " (you chose which kernel starts)" if pinned() else "", steps, k))
+    return k
+
+
 def download(note):
     """Download all updates and prepare them; the number of packages, 0 when
     there is nothing to update, None on an error (already told)."""
@@ -250,6 +313,18 @@ def download(note):
         notify("Update cancelled", "PackageKit downloaded nothing it could install. Nothing was closed.",
                critical=True)
         return None
+    gone = kernels_removed(names, kernels(), os.uname().release, installonly_limit())
+    if gone:
+        log("update: it would remove kernel %s (installonly_limit %d)" % (", ".join(gone), installonly_limit()))
+        if pinned():
+            # the user keeps a kernel that works (a newer one may not hibernate):
+            # no kernel is removed behind their back
+            notify("Update cancelled", "It would remove kernel %s, to keep only %d. You choose which kernel "
+                   "starts (UPDATEDEFAULT=no), so none is removed without you: remove one you do not need "
+                   "(sudo dnf remove kernel-core-VERSION), or allow one more (installonly_limit in "
+                   "/etc/dnf/dnf.conf). Nothing was closed." % (", ".join(gone), installonly_limit()),
+                   critical=True)
+            return None
     short = boot_short(names)
     if short:
         log("update: /boot too small for the new kernel: needs about %d MiB, %d MiB free" % short)
