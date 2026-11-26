@@ -427,7 +427,7 @@ def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None
     busy = launches or opened
     placer = bring_back(kw, launches + opened, windows, existing, ids, media_items=media,
                sound=p.get("sound") if mode != "arrange" else None,
-               timeout=None if busy else 8, settle=20 if busy else 3, fixed=fixed,
+               timeout=None if busy else 8, settle=None if busy else 3, fixed=fixed,
                pause_unknown=bool(busy))      # only when something is started or opened
     # An app started now may bring back fewer windows than it had (Chrome after
     # a hard power-off): open the missing ones from what is saved for them.
@@ -440,7 +440,7 @@ def apply(p, mode, choices=None, ask=True, keep_undo=True, closed=(), title=None
         progress("opening %d windows that did not come back" % len(again))
         now = {w["id"] for w in kw.windows()["windows"]}
         playing = [pl["title"] for pl in mpris_players(kw.bus) if pl["title"]]
-        later = bring_back(kw, again, left, now, {w["app"] for w in left}, timeout=60, settle=8, pause_unknown=True,
+        later = bring_back(kw, again, left, now, {w["app"] for w in left}, pause_unknown=True,
                            media_items=videos_for(p.get("media", []), set(), left, playing))
         opened += again
         if later and placer:

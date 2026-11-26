@@ -103,8 +103,11 @@ number of apps is fine. The practical limits:
 - After login the tool waits up to 2 minutes for windows (`restore_timeout`);
   a window that takes longer appears, but is not placed. It stops waiting
   much sooner when nothing more is coming: 20 s after the last window
-  appeared, a saved video whose tab does not show up 30 s after it, and the
-  sound output at most 20 s after both.
+  appeared; for a browser, which restores all its windows at once, 8 s after
+  its first window (the missing ones are then opened from their pages, and
+  their videos put back then); a saved video whose tab does not show up 20 s
+  after the last window; and the sound output at most 20 s after all that.
+  Each of these is a setting (see [Settings](#settings)).
 - Apps without a menu entry (some AppImages, scripts) are not started again.
 - Never touched, so never saved, closed, moved or started again: the parts
   of Plasma itself (panels, KRunner, KWin, the password wallet, Spectacle,
@@ -466,6 +469,19 @@ What comes back is the setting `on_login`:
 plasma-reopen-windows config set on_login ask
 ```
 
+While the windows come back, one notification shows what is going on, with
+a bar: "waiting for windows: 5 of 8 in place", "putting 1 video back at its
+place (sound off meanwhile)", "waiting for 1 video to appear – up to 20 s".
+At the end it turns into the result ("Restore autosave: started …; put 8
+windows in place"): that is when it is done. The same appears when a profile
+or an autosave is loaded from the app menu; the settings app shows it in its
+own window instead.
+
+The sound output that comes back is the one in use when the windows were
+saved: a monitor by its name, Bluetooth and the laptop by their device name.
+If it is not there (a monitor unplugged, a speaker off), the sound stays
+where it is.
+
 ## Settings
 
 `~/.config/plasma-reopen-windows.conf`:
@@ -478,9 +494,14 @@ plasma-reopen-windows config set on_login ask
 | `place_windows` | auto | Put windows back in place. Screen, position, size, desktop, minimized/maximized. auto = when the KWin script "Remember Window Positions" is on, leave the apps it handles to it and place the others (its blacklist, for example System Settings) here, so the two never move the same window. |
 | `restore_stacking` | yes | Restore the window order. Put windows back in the same order on top of each other, on every screen. |
 | `pause_unknown_videos` | yes | Pause videos that were not saved. A browser tells the desktop about one video only, so only that one comes back at its place. Other videos that start by themselves after a restore or profile load are paused instead of playing out loud. What was playing before is left alone. |
-| `video_watch` | 10 | Seconds to watch for videos that start by themselves. After a load starts apps or opens windows, videos that were not saved and start by themselves are paused for this long (see the setting above); the sound stays off meanwhile (at most 12 s). 0 = do not watch. |
-| `restore_timeout` | 120 | Seconds to wait for windows after login. Windows that appear later are not placed. |
 | `max_age_days` | 7 | Oldest session to restore (days). A saved session older than this is ignored at login. |
+| `restore_timeout` | 120 | Seconds to wait for windows at most. The upper limit for a restore or a profile load; it normally ends much sooner (see the settings below). Windows that appear later are not placed. |
+| `window_wait` | 20 | Seconds to wait for one more window. Apps that were started may still open windows: the restore ends when no new window appeared for this long (and every saved window that is still missing is opened again, where the app allows). |
+| `browser_wait` | 8 | Seconds a browser gets to restore all its windows. Chrome and Firefox restore all their windows at once: the windows still missing this long after the browser's first one are not coming, and are opened again from their saved pages (their videos are put back then). |
+| `video_wait` | 20 | Seconds to wait for a saved video to appear. A saved video whose tab has not shown up this long after the last window appeared is given up (a browser loads a window's other tabs only when shown). |
+| `mute_max` | 30 | Seconds the sound may stay off. The sound is off while videos are put back at their place (they start playing as soon as their tab loads); it comes back on when they are done, at the latest after this. |
+| `sound_wait` | 20 | Seconds to wait for the sound output. A monitor's sound output appears only when the monitor has woken up: it is waited for this long after the windows and videos are done, then the sound stays where it is. |
+| `video_watch` | 10 | Seconds to watch for videos that start by themselves. After a load starts apps or opens windows, videos that were not saved and start by themselves are paused for this long (with “Pause videos that were not saved” on, under Restoring); the sound stays off meanwhile (at most 12 s of it). 0 = do not watch. |
 | `on_login` | last | What comes back at login. last = the session saved by Save & Shut Down / Restart (if there is one); ask = a notification with the choices (last session, a profile, nothing); profile:NAME = always load that profile; nothing = start empty. |
 | `ask_timeout` | 20 | Seconds to answer the login question. With on_login = ask: without an answer, the last session is restored (or nothing, if there is none). |
 | `autosave` | yes | Save the open windows every while. A snapshot of the open apps and windows (nothing is closed or moved), for a hang, an empty battery, a crash, or the normal Shut Down. The last two are kept; switching this off keeps them, and "Save now" still works. |
@@ -490,6 +511,14 @@ plasma-reopen-windows config set on_login ask
 | `when_unsure` | ask | A saved window is not clearly found. When a saved window's title matches none of the open windows, but its app has other windows open (for example a browser window with another tab in front): ask = show a window to choose, per saved window; open = open the saved one again; use = move an open window of that app to its place; skip = leave it out. |
 | `hibernate_minimize` | no | When hibernation would be refused for memory, minimize the windows first. Graphics memory of shown windows stays in RAM and goes into the hibernation image. Minimized, a playing video window gives back about 100 MiB after 20-30 s (measured on a Radeon). hibernate-prepare tries this only when the image would not fit otherwise; the windows come back after waking, in the same order. |
 | `hibernate_minimize_wait` | 30 | Seconds to wait after minimizing. Longer if the memory is still shrinking (up to 10 s more). Chrome gave a minimized video's memory back only 20-26 s later (measured): below about 25 s it often frees nothing. |
+
+The waits (`restore_timeout` to `video_watch`) decide how long a restore or
+a profile load can take; it ends as soon as nothing more is coming. While it
+runs, the progress text (in the settings app's bar, or the notification on
+the desktop) names the setting that decides the current wait, as the
+settings app shows it, with its value now, for example *waiting for windows:
+6 of 8 in place (“Seconds to wait for one more window” = 20 s) – up to 12 s*:
+that is the one to lower if the wait is longer than you need.
 
 Change settings in the file, or with
 `plasma-reopen-windows config set NAME VALUE` (keeps the comments; checks the

@@ -21,7 +21,7 @@ class TestEnd(unittest.TestCase):
         kw = mock.Mock()
         kw.windows.return_value = {"windows": [dict(SAVED, id="{w}", pid=1)], "screens": []}
         kw.run.return_value = 1
-        with mock.patch.object(session, "MEDIA_WAIT", 0.5), \
+        with mock.patch.dict(session.CFG, {"video_wait": "1"}), \
                 mock.patch.object(session, "mpris_players", return_value=[]), \
                 mock.patch("plasma_reopen_windows.media.mpris_players", return_value=[]), \
                 mock.patch.object(session, "relaunch"), mock.patch.object(session, "mute_outputs", return_value=[]), \
@@ -44,6 +44,52 @@ class TestEnd(unittest.TestCase):
         waited, snd = self.run_back(sound={"name": "x", "nick": "y"})
         self.assertLess(waited, 30)
         self.assertTrue(snd.call_args[1].get("final"))
+
+
+    def test_browser_window_not_coming_is_not_waited_for(self):
+        """Chrome shows 1 of its 2 saved windows; the video was in the other:
+        given up 8 s after Chrome's first window, not after 20 s + 30 s."""
+        chrome = dict(SAVED, id="c1", app="google-chrome", caption="Mail - Google Chrome", urls=["https://m/"])
+        lost = dict(SAVED, id="c2", app="google-chrome", caption="Video - YouTube - Google Chrome",
+                    urls=["https://y/"])
+        kw = mock.Mock()
+        kw.windows.return_value = {"windows": [dict(chrome, id="{w}", pid=1)], "screens": []}
+        kw.run.return_value = 1
+        video = {"title": "Video - YouTube", "position": 60000000, "status": "Paused", "app": "google-chrome"}
+        shift = []
+        real = time.time
+        with mock.patch.object(session, "mpris_players", return_value=[]), \
+                mock.patch("plasma_reopen_windows.media.mpris_players", return_value=[]), \
+                mock.patch.object(session, "relaunch"), mock.patch.object(session, "mute_outputs", return_value=[]), \
+                mock.patch.object(session, "unmute_outputs"), mock.patch.object(session, "wait_for_quiet"), \
+                mock.patch.object(session, "session_windows", return_value=[]), \
+                mock.patch.object(session, "live_tabs", return_value=[]), \
+                mock.patch.object(session.time, "sleep", side_effect=lambda x: shift.append(x)), \
+                mock.patch.object(session.time, "time", side_effect=lambda: real() + sum(shift)):
+            placer = session.bring_back(kw, [{"app": "google-chrome"}], [chrome, lost], set(), set(),
+                                        media_items=[video], timeout=120, settle=20)
+        self.assertLess(sum(shift), 12)
+        self.assertEqual([c["id"] for cands in placer.todo.values() for c in cands], ["c2"])
+
+
+    def test_progress_names_the_setting(self):
+        """Each wait in the progress text names its setting, as the settings
+        app shows it, so it is easy to find and shorten."""
+        placer = mock.Mock(matched=[1], last_match=time.time(), todo={"x": [1]})
+        placer.waiting.return_value = [1]
+        placer.browser_until.return_value = 0
+        media = mock.Mock(todo=[])
+        texts = []
+        with mock.patch.object(session, "progress", side_effect=lambda t, *a, **k: texts.append(t)):
+            session.report_wait(placer, media, 3, time.time() + 100, 20, 0, 0)
+            placer.waiting.return_value = []
+            media.todo = [1]
+            session.report_wait(placer, media, 3, time.time() + 100, 20, 0, 0, media_until=time.time() + 5)
+            media.todo = []
+            session.report_wait(placer, media, 3, time.time() + 100, 20, 0, 0, sound_until=time.time() + 5)
+        self.assertIn("(“Seconds to wait for one more window” = 20 s)", texts[0])
+        self.assertIn("(“Seconds to wait for a saved video to appear” = 20 s)", texts[1])
+        self.assertIn("(“Seconds to wait for the sound output” = 20 s)", texts[2])
 
 
 if __name__ == "__main__":

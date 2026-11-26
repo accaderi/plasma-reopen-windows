@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 from .apps import CLOSE_TIMEOUT, FIREFOX, ORDER, close_only_apps, firefox_profiles, app_kind, app_name, find_desktop, ignored, konsole_tabs, launch_spec, quit_app, real_path, relaunch, wait_closed
 from .browsers import BROWSER_APPS, CHROME_DIRS, bring_tab_to_front, live_tabs, match_titles, session_windows, tab_overlap, window_tabs, window_title
 from .audio import default_sink, mute_outputs, set_sound_output, unmute_outputs, wait_for_quiet
-from .config import CFG, STATE, STATE_DIR, log, notify, progress
+from .config import CFG, STATE, STATE_DIR, log, notify, progress, seconds, setting
 from .kwin import JS_PLACE, JS_RAISE, KWin
 from .media import Media, Unknown, mpris_players, similar
 from .screens import annotate, target_geometry
@@ -59,11 +59,12 @@ def close_apps(kw, apps, konsole, files, what="Shutdown"):
     launches = []
     timeout = int(CFG.get("close_timeout"))
     for n, app in enumerate(sorted(apps, key=lambda a: ORDER[app_kind(a)])):
-        progress("closing %s" % app_name(find_desktop(app, apps[app][0]) or app), n, len(apps))
+        limit = CLOSE_TIMEOUT.get(app, timeout)
+        progress("closing %s (%s)" % (app_name(find_desktop(app, apps[app][0]) or app),
+                                      setting("close_timeout", limit)), n, len(apps))
         kind, ws = app_kind(app), apps[app]
         launch = launch_spec(app, kind, ws, konsole, files)
         pids = quit_app(kw, app, kind, ws)
-        limit = CLOSE_TIMEOUT.get(app, timeout)
         if not wait_closed(kw, app, kind, ws, pids, limit):
             log("cancelled: %s did not close within %d s" % (app, limit))
             notify("%s cancelled" % what, "%s did not close (maybe it asks to save something). "
@@ -234,7 +235,7 @@ def do_restore(state=None):
 
 
 def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=None,
-               timeout=None, settle=20, strict_ids=(), fixed=None, pause_unknown=False, login=False):
+               timeout=None, settle=None, strict_ids=(), fixed=None, pause_unknown=False, login=False):
     """Start apps, then put windows in place (matched by app and title), seek
     and pause videos, select the sound output, and restore the stacking order.
     ignore_ids: windows that must not be matched (already open before)."""
@@ -246,7 +247,9 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
         if pause_unknown and CFG.get("pause_unknown_videos") == "yes" and watch > 0 else None
     # Videos start playing as soon as their tab loads, before they can be
     # paused again (saved ones put back, unknown ones paused): keep the sound
-    # off until then (at most 30 s).
+    # off until then (at most mute_max).
+    if settle is None:
+        settle = seconds("window_wait")
     muting = media.pending() or bool(unknown and launches)
     if muting and login:
         wait_for_quiet()          # let the login sound finish
@@ -254,9 +257,9 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
     placer = None
     try:
         relaunch(launches, kw)
-        unmute_at = time.time() + 30      # counted from when all apps are started
-        sound_until = time.time() + 20
+        unmute_at = time.time() + seconds("mute_max")      # counted from when all apps are started
         started = time.time()
+        sound_until = 0                   # set when everything else is done
         watch_until = time.time() + watch if unknown else 0
         quiet_until = time.time() + min(watch, 12) if unknown and launches else 0   # they start within seconds
         placer = Placer(kw, {"windows": windows}, set(ignore_ids), move=move, strict_ids=strict_ids, fixed=fixed)
@@ -274,19 +277,26 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
                 muted, muting = [], False
             placer.step()
             # A saved video whose tab never appears (Chrome loads a window's
-            # other tabs only when they are shown) is waited for until 30 s
-            # after the last window appeared, not the whole time limit
-            # (measured 2026-11-25: a Reload waited 2 minutes for one)
-            media_until = max(placer.last_match, started) + MEDIA_WAIT
-            media_waits = bool(media.todo) and time.time() < media_until
+            # other tabs only when they are shown) is waited for until
+            # video_wait after the last window appeared, not the whole time
+            # limit (measured 2026-11-25: a Reload waited 2 minutes for one);
+            # one whose window is not coming is not waited for at all (its
+            # window is opened again, and the video put back then)
+            media_until = max(placer.last_match, started) + seconds("video_wait")
+            gone = [strip_caption(c["caption"]) for c in placer.given_up()]
+            media_waits = time.time() < media_until and any(
+                not any(similar(m["title"], g) >= 0.6 for g in gone) for m in media.todo)
+            windows_done = not placer.waiting() or time.time() - placer.last_match > settle
+            # the sound output's monitor may still be waking up: waited for
+            # sound_wait once the windows and videos are done
+            if sound and not media_waits and windows_done and time.time() > watch_until:
+                sound_until = sound_until or time.time() + seconds("sound_wait")
+                if time.time() > sound_until:
+                    set_sound_output(sound, final=True)
+                    sound = None
             report_wait(placer, media, len(windows) + len(fixed or {}), end, settle,
-                        unmute_at if muting else 0, watch_until, media_until)
-            windows_done = not placer.todo or time.time() - placer.last_match > settle
-            # the sound output's monitor may still be waking up, but it is not
-            # waited for longer than the windows and videos need, plus 20 s
-            if sound and time.time() > sound_until and not media_waits and windows_done:
-                set_sound_output(sound, final=True)
-                sound = None
+                        unmute_at if muting else 0, watch_until, media_until if media_waits else 0,
+                        sound_until if sound else 0)
             # done, or no further window for a while (an app may open fewer windows)
             if not sound and not media_waits and time.time() > watch_until and windows_done:
                 break
@@ -308,7 +318,6 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
     return placer
 
 
-MEDIA_WAIT = 30      # seconds after the last window appeared that a missing video is waited for
 
 
 def reopen_lost(kw, placer, launches, wait=30):
@@ -336,21 +345,34 @@ def reopen_lost(kw, placer, launches, wait=30):
         time.sleep(1)
 
 
-def report_wait(placer, media, total, end, settle, unmute_at, watch_until, media_until=0):
-    """What bring_back is waiting for, for the settings app's progress bar."""
+def report_wait(placer, media, total, end, settle, unmute_at, watch_until, media_until=0, sound_until=0):
+    """What bring_back is waiting for, for the progress bar (settings app or
+    desktop): each wait names the setting that decides how long it is."""
     now = time.time()
     placed = len(placer.matched)
+    videos = "%d video%s" % (len(media.todo), "s" if len(media.todo) > 1 else "")
+
+    def limit(until, key):            # the time limit, unless the overall one comes first
+        return (end, "restore_timeout") if end < until else (until, key)
     if media.todo and unmute_at:
-        progress("putting %d video%s back at its place (sound off meanwhile)" % (
-            len(media.todo), "s" if len(media.todo) > 1 else ""), until=unmute_at)
-    elif media.todo and media_until > now:
-        progress("waiting for %d video%s to appear" % (len(media.todo), "s" if len(media.todo) > 1 else ""),
-                 until=media_until)
-    elif placer.todo:
-        progress("waiting for windows: %d of %d in place" % (placed, total), placed, total,
-                 until=min(end, placer.last_match + settle))
+        until, key = limit(unmute_at, "mute_max")
+        progress("putting %s back at its place, sound off meanwhile (%s)" % (videos, setting(key)), until=until)
+    elif placer.waiting():
+        browsers = placer.browser_until()
+        if browsers and browsers < placer.last_match + settle:
+            until, key = limit(browsers, "browser_wait")
+        else:
+            until, key = limit(placer.last_match + settle, "window_wait")
+        progress("waiting for windows: %d of %d in place (%s)" % (placed, total, setting(key)), placed, total,
+                 until=until)
+    elif media_until > now:
+        until, key = limit(media_until, "video_wait")
+        progress("waiting for %s to appear (%s)" % (videos, setting(key)), until=until)
     elif watch_until > now:
-        progress("watching for videos that start by themselves", until=watch_until)
+        progress("watching for videos that start by themselves (%s)" % setting("video_watch"), until=watch_until)
+    elif sound_until > now:
+        progress("waiting for the sound output, its monitor may still wake up (%s)" % setting("sound_wait"),
+                 until=sound_until)
     else:
         progress("windows in place", placed, total)
 
@@ -368,6 +390,7 @@ class Placer:
         self.strict = set(strict_ids)
         self.matched = []    # (saved window, new window id)
         self.last_match = time.time()
+        self.first_seen = {}  # app -> when its first window was matched
         self.todo = {}
         for w in state["windows"]:
             self.todo.setdefault(w["app"], []).append(w)
@@ -458,6 +481,7 @@ class Placer:
             self.ignore.add(w["id"])
             self.matched.append((c, w["id"]))
             self.last_match = time.time()
+            self.first_seen.setdefault(c["app"], self.last_match)
             # not recognized by its title: "Remember Window Positions" (which
             # goes by the title) has not placed it either
             if c["app"] not in self.move and not weak and c.get("id") not in self.force:
@@ -466,6 +490,26 @@ class Placer:
             log("placing %s \"%s\" as \"%s\" (%s)" % (w["app"], w["caption"][:40], c["caption"][:40], how))
         if moves:
             self.kw.run(JS_PLACE % json.dumps(moves))
+
+    def given_up(self):
+        """Saved windows no longer waited for: a browser restores all its
+        windows at once, so the ones missing 8 s after its first one are not
+        coming (measured 2026-11-26: 30 s were spent waiting for them and for
+        a video in one of them); they are opened again from their pages."""
+        now = time.time()
+        return [c for app, cands in self.todo.items() if app in BROWSER_APPS
+                and now - self.first_seen.get(app, now) > seconds("browser_wait") for c in cands]
+
+    def browser_until(self):
+        """When the browsers' missing windows are given up (0: none waited for)."""
+        times = [self.first_seen[app] + seconds("browser_wait") for app in self.todo
+                 if app in BROWSER_APPS and app in self.first_seen]
+        return max(times) if times else 0
+
+    def waiting(self):
+        """Saved windows still expected to appear by themselves."""
+        gone = self.given_up()
+        return [c for cands in self.todo.values() for c in cands if not any(c is g for g in gone)]
 
     def fronts(self):
         """Bring the saved front tab to the front again in windows matched by

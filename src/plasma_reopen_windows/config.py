@@ -62,19 +62,48 @@ SETTINGS = [
          help="A browser tells the desktop about one video only, so only that one comes back at "
               "its place. Other videos that start by themselves after a restore or profile load "
               "are paused instead of playing out loud. What was playing before is left alone."),
-    dict(key="video_watch", default="10", type="int", min=0, max=120, section="Restoring",
-         label="Seconds to watch for videos that start by themselves",
-         help="After a load starts apps or opens windows, videos that were not saved and "
-              "start by themselves are paused for this long (see the setting above); the "
-              "sound stays off meanwhile (at most 12 s). 0 = do not watch.",
-         when="a video in a slow-loading window still starts playing after the load."),
-    dict(key="restore_timeout", default="120", type="int", min=10, max=900, section="Restoring",
-         label="Seconds to wait for windows after login",
-         help="Windows that appear later are not placed.",
-         when="slow apps (large projects) take longer than 2 minutes to open."),
     dict(key="max_age_days", default="7", type="int", min=1, max=365, section="Restoring",
          label="Oldest session to restore (days)",
          help="A saved session older than this is ignored at login."),
+    # Waiting: a restore or profile load ends as soon as nothing more is
+    # coming; each of these is named in its progress text
+    dict(key="restore_timeout", default="120", type="int", min=10, max=900, section="Waiting",
+         label="Seconds to wait for windows at most",
+         help="The upper limit for a restore or a profile load; it normally ends much sooner "
+              "(see the settings below). Windows that appear later are not placed.",
+         when="slow apps (large projects) take longer than 2 minutes to open."),
+    dict(key="window_wait", default="20", type="int", min=3, max=300, section="Waiting",
+         label="Seconds to wait for one more window",
+         help="Apps that were started may still open windows: the restore ends when no new "
+              "window appeared for this long (and every saved window that is still missing is "
+              "opened again, where the app allows).",
+         when="a slow app (a large project) opens its window later than this."),
+    dict(key="browser_wait", default="8", type="int", min=2, max=120, section="Waiting",
+         label="Seconds a browser gets to restore all its windows",
+         help="Chrome and Firefox restore all their windows at once: the windows still missing "
+              "this long after the browser's first one are not coming, and are opened again "
+              "from their saved pages (their videos are put back then)."),
+    dict(key="video_wait", default="20", type="int", min=0, max=300, section="Waiting",
+         label="Seconds to wait for a saved video to appear",
+         help="A saved video whose tab has not shown up this long after the last window "
+              "appeared is given up (a browser loads a window's other tabs only when shown).",
+         when="a video on a slow site is put back too rarely."),
+    dict(key="mute_max", default="30", type="int", min=0, max=300, section="Waiting",
+         label="Seconds the sound may stay off",
+         help="The sound is off while videos are put back at their place (they start playing "
+              "as soon as their tab loads); it comes back on when they are done, at the latest "
+              "after this."),
+    dict(key="sound_wait", default="20", type="int", min=0, max=300, section="Waiting",
+         label="Seconds to wait for the sound output",
+         help="A monitor's sound output appears only when the monitor has woken up: it is "
+              "waited for this long after the windows and videos are done, then the sound "
+              "stays where it is."),
+    dict(key="video_watch", default="10", type="int", min=0, max=120, section="Waiting",
+         label="Seconds to watch for videos that start by themselves",
+         help="After a load starts apps or opens windows, videos that were not saved and "
+              "start by themselves are paused for this long (with “Pause videos that were not saved” on, under Restoring); the "
+              "sound stays off meanwhile (at most 12 s of it). 0 = do not watch.",
+         when="a video in a slow-loading window still starts playing after the load."),
     # Login
     dict(key="on_login", default="last", type="login", section="Login",
          label="What comes back at login",
@@ -131,6 +160,22 @@ SETTINGS = [
 
 
 DEFAULTS = {s["key"]: s["default"] for s in SETTINGS}
+
+
+def label(key):
+    """A setting's name as the settings app shows it, in quotes (progress
+    texts name the setting that decides a wait, so it is easy to find)."""
+    return "“%s”" % next(s["label"] for s in SETTINGS if s["key"] == key)
+
+
+def setting(key, value=None):
+    """“Setting name” = 20 s: the setting that decides a wait, with the value
+    it has now (or the one used, when an app has its own)."""
+    return "%s = %s s" % (label(key), CFG.get(key) if value is None else value)
+
+
+def seconds(key):
+    return int(CFG.get(key))
 
 
 def setting_values(st):
@@ -312,6 +357,89 @@ PROGRESS_PREFIX = "@@"
 _last_progress = None
 
 
+class ScreenProgress:
+    """Progress on the desktop when the settings app is not open (at login,
+    from the app menu): one notification with a bar, updated in place, and
+    replaced by the result at the end (notify)."""
+
+    def __init__(self):
+        self.id = 0
+        self.step, self.since, self.shown = None, 0, (None, -1, 0)
+
+    def _bus(self):
+        from gi.repository import Gio
+        return Gio.bus_get_sync(Gio.BusType.SESSION)
+
+    def _send(self, summary, body, pct=None, timeout=-1, icon="preferences-system-windows"):
+        if os.environ.get("PRW_NO_NOTIFICATIONS"):
+            return False
+        from gi.repository import GLib
+        hints = {"value": GLib.Variant("i", pct)} if pct is not None else {}
+        if pct is not None:
+            hints["transient"] = GLib.Variant("b", True)     # not kept in the history
+        try:
+            self.id = self._bus().call_sync(
+                "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                "org.freedesktop.Notifications", "Notify",
+                GLib.Variant("(susssasa{sv}i)", ("Reopen windows", self.id, icon, summary, body, [],
+                                                 hints, timeout)),
+                GLib.VariantType("(u)"), 0, 3000).unpack()[0]
+            return True
+        except Exception:                # no notification service (early at login): nothing shown
+            return False
+
+    def show(self, step, done=None, total=None, until=None):
+        now = time.time()
+        if step != self.step:
+            self.step, self.since = step, now
+        if total:
+            pct = min(100, int(100 * (done or 0) / total))
+        elif until and until > self.since:
+            pct = min(100, int(100 * (now - self.since) / (until - self.since)))
+        else:
+            pct = 0
+        # the same text as the settings app's bar (the bar shows the count)
+        text = step[0].upper() + step[1:] if step else "Working"
+        left = int(until - now) if until else 0
+        if left > 0:
+            text += "  –  up to %d s" % left
+        # a new step at once; the same step at most every 2 s
+        if (step, pct) == self.shown[:2] or (step == self.shown[0] and now - self.shown[2] < 2):
+            return
+        if self._send("Working…", text, pct, timeout=0):
+            self.shown = (step, pct, now)
+
+    def finish(self, title, body, critical=False):
+        """The result in place of the progress; False if nothing was shown."""
+        if not self.id:
+            return False
+        ok = self._send(title, body, None, icon="dialog-warning" if critical else "system-shutdown")
+        self.id, self.step, self.shown = 0, None, (None, -1, 0)
+        return ok
+
+    def close(self):
+        if self.id:
+            from gi.repository import GLib
+            try:
+                self._bus().call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                                      "org.freedesktop.Notifications", "CloseNotification",
+                                      GLib.Variant("(u)", (self.id,)), None, 0, 3000)
+            except Exception:
+                pass
+            self.id = 0
+
+
+_screen = ScreenProgress()
+
+
+def _close_progress():
+    _screen.close()
+
+
+import atexit                            # noqa: E402  (a command that ends without a result: no bar left behind)
+atexit.register(_close_progress)
+
+
 def progress(step, done=None, total=None, until=None):
     """One step for the settings app's progress bar: a line on stdout, only
     when the app started this command (it reads these lines as they come).
@@ -319,6 +447,7 @@ def progress(step, done=None, total=None, until=None):
     app counts down to."""
     global _last_progress
     if not os.environ.get("PRW_FROM_APP"):
+        _screen.show(step, done, total, until)
         return
     line = PROGRESS_PREFIX + json.dumps({"step": step, "done": done, "total": total,
                                          "until": round(until) if until else None})
@@ -341,6 +470,11 @@ def notify(title, body="", critical=False):
             return
         except (OSError, ValueError):
             pass
+    if not critical and _screen.finish(title, body):
+        return
+    _screen.close()
+    if os.environ.get("PRW_NO_NOTIFICATIONS"):
+        return
     cmd = ["notify-send", "-a", "Reopen windows", "-i", "system-shutdown"]
     if critical:
         cmd += ["-u", "critical"]
