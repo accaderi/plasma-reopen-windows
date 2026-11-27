@@ -246,6 +246,28 @@ class TestKernels(unittest.TestCase):
             self.assertIsNone(updates.new_kernel_note(run))     # once
             self.assertIsNone(updates.new_kernel_note("7.3.5-200.fc44.x86_64"))   # running it: nothing
 
+    def test_available_kernel_told_once(self):
+        import tempfile
+        offered = os.path.join(tempfile.mkdtemp(), "offered")
+        out = ("Security     kernel-7.3.6-200.fc44.x86_64 (updates)\n"
+               "Security     kernel-core-7.3.6-200.fc44.x86_64 (updates)\n"
+               "Security     kernel-devel-7.3.6-200.fc44.x86_64 (updates)\n")
+        run = mock.Mock(stdout=out)
+        with mock.patch.object(updates, "OFFERED", offered), mock.patch.object(updates.subprocess, "run",
+                                                                               return_value=run), \
+                mock.patch.object(updates, "kernels", return_value=self.K), \
+                mock.patch.object(updates, "notify") as note, mock.patch.object(updates, "log"), \
+                mock.patch.object(updates, "pinned", return_value=True):
+            self.assertEqual(updates.kernel_available_note(self.K[0]),
+                             "7.3.6-200.fc44.x86_64")
+            self.assertIn("next to 7.2.9-200, which keeps starting", note.call_args[0][1])
+            self.assertIsNone(updates.kernel_available_note(self.K[0]))       # once
+            with mock.patch.object(updates, "kernels", return_value=self.K + ["7.3.6-200.fc44.x86_64"]):
+                os.remove(offered)
+                self.assertIsNone(updates.kernel_available_note(self.K[0]))   # installed: the other note
+            run.stdout = ""
+            self.assertIsNone(updates.kernel_available_note(self.K[0]))       # none available
+
 
 if __name__ == "__main__":
     unittest.main()

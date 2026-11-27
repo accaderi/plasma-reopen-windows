@@ -281,7 +281,54 @@ def new_kernel_note(running=None):
     notify("New kernel %s installed" % k.split(".fc")[0],
            "This computer still starts %s%s. To try the new one: %s. If it works: "
            "sudo grubby --set-default /boot/vmlinuz-%s" % (
-               running.split(".fc")[0], " (you chose which kernel starts)" if pinned() else "", steps, k))
+               running.split(".fc")[0], " (you chose which kernel starts)" if pinned() else "", steps, k), stay=True)
+    return k
+
+
+OFFERED = os.path.join(STATE_DIR, "kernels-offered")   # available kernels already told about
+
+
+def available_kernel():
+    """The newest kernel the update would install, as uname -r writes it, or
+    None. pkcon lists it as "<kind>   kernel-core-VERSION-RELEASE.ARCH (repo)"
+    (from the package cache: about a second, no download)."""
+    try:
+        r = subprocess.run(pkcon("get-updates"), capture_output=True, text=True, env=_env(), check=False,
+                           timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    found = re.findall(r"^\S+\s+kernel-core-(\d\S*)\s+\(\S+\)$", r.stdout, re.M)
+    return max(found, key=vkey) if found else None
+
+
+def kernel_available_note(running=None):
+    """At login: a kernel newer than every installed one can be installed.
+    Told once per kernel, with what Save & Update will do with it. Returns
+    the kernel told about."""
+    running = running or os.uname().release
+    k = available_kernel()
+    if not k or any(vkey(i) >= vkey(k) for i in kernels() + [running]):
+        return None
+    try:
+        with open(OFFERED) as f:
+            told = set(f.read().split())
+    except OSError:
+        told = set()
+    if k in told:
+        return None
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(OFFERED, "w") as f:
+        f.write("\n".join(sorted(told | {k})) + "\n")
+    log("new kernel available: %s (running %s)" % (k, running))
+    short, now = k.split(".fc")[0], running.split(".fc")[0]
+    if pinned():
+        what = ("Save & Update installs it next to %s, which keeps starting (you chose which kernel starts). "
+                "Then restart, choose it once in the boot menu and try it" % now)
+        if os.path.exists("/usr/local/sbin/hibernate-prepare"):
+            what += ": \"sudo hibernate-prepare calibrate\", then one real hibernation"
+    else:
+        what = "Save & Update installs it, and the computer then starts it"
+    notify("New kernel %s available" % short, what + ".", stay=True)
     return k
 
 

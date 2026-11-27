@@ -448,6 +448,9 @@ push the working one out (each kernel takes about 210 MB of `/boot`).
 
 This tool then helps in two ways:
 
+- **At login**, when a kernel newer than every installed one is available,
+  one notification says so, once: Save & Update installs it next to the one
+  that starts, and how to try it then.
 - **At login**, when a kernel newer than the running one has been installed
   (by any update), one notification says so, once, with how to try it:
   restart and choose it in the boot menu (with the hibernation fix: `sudo
