@@ -1,10 +1,16 @@
 """plasma-reopen-windows: media players over MPRIS (videos, music)."""
 
 import difflib
+import json
+import os
 import re
+import subprocess
+import sys
 import time
 from gi.repository import GLib
-from .config import log
+from .config import CFG, STATE_DIR, log
+
+LATE = os.path.join(STATE_DIR, "late-videos.json")   # saved videos still to be put back after a restore
 
 
 # ---- videos and sound output -------------------------------------------------
@@ -155,3 +161,64 @@ class Media:
     def report(self):
         for m in self.todo:
             log("media: \"%s\" did not appear (tab not opened yet?)" % m["title"][:50])
+
+
+def watch_later(items):
+    """Saved videos whose tab had not loaded when the restore ended: a
+    background process keeps looking for them for video_late seconds, and
+    puts each back (paused at its place) when it appears (measured
+    2026-11-27: a video saved paused had not appeared after video_wait, and
+    played out loud when its tab was shown later). Returns whether it watches."""
+    secs = int(CFG.get("video_late"))
+    if not items or secs <= 0:
+        return False
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(LATE, "w") as f:
+            json.dump({"until": time.time() + secs, "items": [
+                {k: v for k, v in m.items() if k != "tries"} for m in items]}, f)
+    except OSError as e:
+        log("media: could not keep watching for late videos: %s" % e)
+        return False
+    log("media: watching for %s for %d s more: %s" % (
+        "%d videos" % len(items) if len(items) > 1 else "1 video", secs,
+        "; ".join(m["title"][:50] for m in items)))
+    if os.environ.get("PRW_NO_BACKGROUND"):          # tests
+        return True
+    try:
+        subprocess.Popen([sys.executable, os.path.realpath(sys.argv[0]), "media-late"], start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        log("media: could not keep watching for late videos: %s" % e)
+        return False
+    return True
+
+
+def watch_late(bus, poll=1.0):
+    """The background part of watch_later: until the saved time, or until all
+    are put back. A newer restore replaces the file and this one stops."""
+    try:
+        with open(LATE) as f:
+            job = json.load(f)
+    except (OSError, ValueError):
+        return
+    stamp = os.stat(LATE).st_mtime
+    media = Media(bus, job["items"])
+    media.start = time.time() - 3600         # a playing video may be anywhere on by now
+    while media.todo and time.time() < job["until"]:
+        try:
+            if os.stat(LATE).st_mtime != stamp:
+                return
+        except OSError:
+            return
+        media.step()
+        time.sleep(poll)
+    for m in media.done:
+        log("media: \"%s\" put back after the restore" % m["title"][:50])
+    if media.todo:
+        log("media: \"%s\" not seen in time after the restore" % "; ".join(m["title"][:50] for m in media.todo))
+    try:
+        if os.stat(LATE).st_mtime == stamp:
+            os.remove(LATE)
+    except OSError:
+        pass

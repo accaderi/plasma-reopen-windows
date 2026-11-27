@@ -104,6 +104,12 @@ SETTINGS = [
               "start by themselves are paused for this long (with “Pause videos that were not saved” on, under Restoring); the "
               "sound stays off meanwhile (at most 12 s of it). 0 = do not watch.",
          when="a video in a slow-loading window still starts playing after the load."),
+    dict(key="video_late", default="600", type="int", min=0, max=3600, section="Waiting",
+         label="Seconds to keep watching for a saved video after a load",
+         help="A saved video that did not appear in time (its tab loads only when shown) is "
+              "watched for this long after the load ends, in the background, and put back at "
+              "its place and paused or playing when it appears. 0 = do not watch.",
+         when="you open such a tab only much later."),
     # Login
     dict(key="on_login", default="last", type="login", section="Login",
          label="What comes back at login",

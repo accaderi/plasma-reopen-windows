@@ -13,7 +13,7 @@ from .browsers import BROWSER_APPS, CHROME_DIRS, bring_tab_to_front, live_tabs, 
 from .audio import default_sink, mute_outputs, set_sound_output, unmute_outputs, wait_for_quiet
 from .config import CFG, STATE, STATE_DIR, log, notify, progress, seconds, setting
 from .kwin import JS_PLACE, JS_RAISE, KWin
-from .media import Media, Unknown, mpris_players, similar
+from .media import Media, Unknown, mpris_players, similar, watch_later
 from .screens import annotate, target_geometry
 
 
@@ -308,6 +308,9 @@ def bring_back(kw, launches, windows, ignore_ids, move, media_items=(), sound=No
     finally:
         unmute_outputs(muted)
     media.report()
+    # given up only for now: a tab Chrome loads when it is shown can start its
+    # video minutes later (videos of windows given up came back with them)
+    watch_later(media.todo)
     if unknown:
         unknown.report()
     if placer:

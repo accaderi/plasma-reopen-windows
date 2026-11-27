@@ -92,5 +92,30 @@ class TestEnd(unittest.TestCase):
         self.assertIn("(“Seconds to wait for the sound output” = 20 s)", texts[2])
 
 
+class TestLateVideo(unittest.TestCase):
+    """A video saved paused whose tab loads only when shown (measured
+    2026-11-27: it played out loud after the restore had given it up)."""
+    VIDEO = {"title": "Saved video", "position": 710000000, "status": "Paused", "app": "google-chrome"}
+
+    def test_put_back_when_it_appears_later(self):
+        from plasma_reopen_windows import media
+        self.assertTrue(media.watch_later([dict(self.VIDEO, tries=0)]))
+        playing = {"bus": "org.mpris.MediaPlayer2.chrome", "title": "Saved video - YouTube", "trackid": "/t/1",
+                   "position": 2000000, "status": "Playing", "can_seek": True, "live": False}
+        seen = [[], [], [playing], [dict(playing, status="Paused", position=710000000)]]
+        bus = mock.Mock()
+        with mock.patch.object(media, "mpris_players", side_effect=lambda b: seen.pop(0) if len(seen) > 1 else seen[0]), \
+                mock.patch.object(media.time, "sleep"):
+            media.watch_late(bus, poll=0)
+        calls = [c[0][3] for c in bus.call_sync.call_args_list]
+        self.assertEqual(calls, ["Pause", "SetPosition"])
+        self.assertFalse(os.path.exists(media.LATE))
+
+    def test_not_watched_when_off(self):
+        from plasma_reopen_windows import media
+        with mock.patch.dict(media.CFG, {"video_late": "0"}):
+            self.assertFalse(media.watch_later([dict(self.VIDEO)]))
+
+
 if __name__ == "__main__":
     unittest.main()

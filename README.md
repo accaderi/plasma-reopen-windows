@@ -324,6 +324,10 @@ plasma-reopen-windows profile list
   back there, with the sound off until they are. A video that is open already
   is not touched. (A browser only loads a video in the tab in front, which is
   why the front tab is saved too.)
+- **A saved video that has not appeared when the load ends** (its tab loads
+  only when you show it) is watched for in the background for 10 more
+  minutes (`video_late`): when its tab is shown and it starts, it is put back
+  at its place, paused if it was paused.
 - **Only one video per browser comes back at its place.** Chrome and Firefox
   each tell the desktop about one video only, the one started last (Firefox:
   only one that makes sound), so that is the one saved. Other videos that start
@@ -538,6 +542,7 @@ where it is.
 | `mute_max` | 30 | Seconds the sound may stay off. The sound is off while videos are put back at their place (they start playing as soon as their tab loads); it comes back on when they are done, at the latest after this. |
 | `sound_wait` | 20 | Seconds to wait for the sound output. A monitor's sound output appears only when the monitor has woken up: it is waited for this long after the windows and videos are done, then the sound stays where it is. |
 | `video_watch` | 10 | Seconds to watch for videos that start by themselves. After a load starts apps or opens windows, videos that were not saved and start by themselves are paused for this long (with “Pause videos that were not saved” on, under Restoring); the sound stays off meanwhile (at most 12 s of it). 0 = do not watch. |
+| `video_late` | 600 | Seconds to keep watching for a saved video after a load. A saved video that did not appear in time (its tab loads only when shown) is watched for this long after the load ends, in the background, and put back at its place and paused or playing when it appears. 0 = do not watch. |
 | `on_login` | last | What comes back at login. last = the session saved by Save & Shut Down / Restart (if there is one); ask = a notification with the choices (last session, a profile, nothing); profile:NAME = always load that profile; nothing = start empty. |
 | `ask_timeout` | 20 | Seconds to answer the login question. With on_login = ask: without an answer, the last session is restored (or nothing, if there is none). |
 | `autosave` | yes | Save the open windows every while. A snapshot of the open apps and windows (nothing is closed or moved), for a hang, an empty battery, a crash, or the normal Shut Down. The last two are kept; switching this off keeps them, and "Save now" still works. |
@@ -549,7 +554,7 @@ where it is.
 | `hibernate_minimize_wait` | 30 | Seconds to wait after minimizing. Longer if the memory is still shrinking (up to 10 s more). Chrome gave a minimized video's memory back only 20-26 s later (measured): below about 25 s it often frees nothing. |
 
 The waits (`restore_timeout` to `video_watch`) decide how long a restore or
-a profile load can take; it ends as soon as nothing more is coming. While it
+a profile load can take (`video_late` runs in the background after it); it ends as soon as nothing more is coming. While it
 runs, the progress text (in the settings app's bar, or the notification on
 the desktop) names the setting that decides the current wait, as the
 settings app shows it, with its value now, for example *waiting for windows:

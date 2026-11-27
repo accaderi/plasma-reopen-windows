@@ -353,6 +353,10 @@ def main():
                 hibernate.before(int(sys.argv[3]) if sys.argv[3:4] and sys.argv[3].isdigit() else None)
             else:
                 hibernate.after()
+        elif cmd == "media-late":            # started by a restore: saved videos that come later
+            from gi.repository import Gio
+            from .media import watch_late
+            watch_late(Gio.bus_get_sync(Gio.BusType.SESSION, None))
         elif cmd == "front":                 # used by the settings app: show its window
             front(show=True)
         elif cmd == "config":

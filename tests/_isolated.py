@@ -10,3 +10,5 @@ for _var in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
     os.makedirs(os.environ[_var], exist_ok=True)
 # no notifications on the desktop of whoever runs the tests
 os.environ["PRW_NO_NOTIFICATIONS"] = "1"
+# no background processes (the late video watch) from tests
+os.environ["PRW_NO_BACKGROUND"] = "1"
